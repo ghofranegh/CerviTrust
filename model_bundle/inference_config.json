@@ -1,0 +1,28 @@
+{
+  "classes": [
+    "NILM",
+    "LSIL",
+    "HSIL",
+    "SCC"
+  ],
+  "image_size": 64,
+  "patch_size": 64,
+  "min_nucleus_area": 20,
+  "hovernet_model": "hovernet_fast-pannuke",
+  "gradcam_target_layer": "blocks.2",
+  "top_k_cells": 12,
+  "laplace": {
+    "subset_of_weights": "last_layer",
+    "hessian_structure": "diag",
+    "prior_precision": 1.0
+  },
+  "mil": {
+    "model": "attention_mil",
+    "hidden_dim": 128,
+    "attention_dim": 64,
+    "dropout": 0.25,
+    "epochs": 20,
+    "lr": 0.0001,
+    "bag_max_instances": 500
+  }
+}

@@ -1,0 +1,26 @@
+'use client';
+
+import { Navigation } from '@/components/navigation';
+import { Footer } from '@/components/footer';
+import { ImageAnalyzer } from '@/components/image-analyzer';
+
+export default function AnalysisPage() {
+  return (
+    <main className="min-h-screen flex flex-col bg-background">
+      <Navigation />
+
+      <section className="flex-1 py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+        <div className="mb-12">
+          <h1 className="text-4xl font-semibold text-foreground mb-2">Cervical Cytology Analysis</h1>
+          <p className="text-foreground/60">
+            Upload a cervical cytology image to receive an automated screening assessment
+          </p>
+        </div>
+
+        <ImageAnalyzer />
+      </section>
+
+      <Footer />
+    </main>
+  );
+}
