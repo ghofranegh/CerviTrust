@@ -1,5 +1,12 @@
-"""Backend d'inference : charge le bundle exporte depuis Kaggle et execute le pipeline
-complet (HoVer-Net -> EfficientNet+Laplace -> MIL -> Grad-CAM) sur UNE image uploadee."""
+"""Backend d'inference : charge le bundle centralise exporte depuis Kaggle et
+execute le pipeline (EfficientNet+Laplace) sur UNE image uploadee. La segmentation
+HoVer-Net est optionnelle, utilisee uniquement pour les visualisations/regions
+d'interet - pas pour la classification, qui opere directement sur l'image entiere
+(le modele a ete entraine sur des crops de cellule uniques, comme SIPaKMeD/Herlev).
+Toutes les images de sortie sont encodees en base64 PNG, format attendu par
+image-analyzer.tsx (`data:image/png;base64,${...}`)."""
+import base64
+import io
 import json
 import tempfile
 from pathlib import Path
@@ -8,11 +15,9 @@ import cv2
 import numpy as np
 import timm
 import torch
-import torch.nn as nn
 from PIL import Image
 from laplace import Laplace
 from torchvision import transforms
-from tiatoolbox.models.engine.nucleus_instance_segmentor import NucleusInstanceSegmentor
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
@@ -20,7 +25,8 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 BUNDLE_DIR = Path(__file__).resolve().parent.parent / "model_bundle"
 CFG = json.load(open(BUNDLE_DIR / "inference_config.json"))
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CLASS_NAMES, IMAGE_SIZE, PATCH_SIZE, MIN_AREA = CFG["classes"], CFG["image_size"], CFG["patch_size"], CFG["min_nucleus_area"]
+CLASS_NAMES = CFG["classes"]
+IMAGE_SIZE = CFG["image_size"]
 
 _TRANSFORM = transforms.Compose([
     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)), transforms.ToTensor(),
@@ -28,38 +34,16 @@ _TRANSFORM = transforms.Compose([
 ])
 
 
-def _to_uint8_array(array: np.ndarray) -> np.ndarray:
-    arr = np.asarray(array)
-    if arr.dtype == np.uint8:
-        return arr
-
-    arr = arr.astype(np.float32)
-    if arr.max() <= 1.0:
-        arr = np.clip(arr, 0, 1) * 255.0
-    else:
-        arr = np.clip(arr, 0, 255)
-    return arr.astype(np.uint8)
+def _pil_to_base64(img: Image.Image) -> str:
+    """Convertit une image PIL en chaine base64 PNG - format attendu par le
+    frontend, pas un objet PIL brut (non serialisable en JSON tel quel)."""
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _normalize_heatmap(heatmap: np.ndarray) -> np.ndarray:
-    arr = np.asarray(heatmap, dtype=np.float32)
-    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-    if arr.size == 0:
-        return arr
-
-    min_val = float(np.min(arr))
-    max_val = float(np.max(arr))
-    if np.isclose(min_val, max_val):
-        return np.zeros_like(arr, dtype=np.float32)
-
-    return (arr - min_val) / (max_val - min_val)
-
-
-def _colorize_heatmap(heatmap: np.ndarray) -> np.ndarray:
-    normalized = _normalize_heatmap(heatmap)
-    heatmap_uint8 = np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
-    colorized = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
-    return cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB)
+def _array_to_base64(arr: np.ndarray) -> str:
+    return _pil_to_base64(Image.fromarray(arr.astype(np.uint8)))
 
 
 def crop_nucleus(image, centroid, patch_size):
@@ -82,139 +66,118 @@ def read_tiatoolbox_zarr(zarr_path) -> dict:
                 "type": int(store["type"][i]), "type_prob": float(store["prob"][i])} for i in range(n)}
 
 
-def _apply_fedbn_params(model: nn.Module, flat: torch.Tensor):
-    modules = dict(model.named_modules())
-    names = [n for n, _ in model.named_parameters()
-             if not isinstance(modules[n.rsplit(".", 1)[0]], (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d))]
-    params, offset = dict(model.named_parameters()), 0
-    for n in names:
-        numel = params[n].numel()
-        params[n].data = flat[offset:offset + numel].view_as(params[n]).clone()
-        offset += numel
-
-
-class AttentionMIL(nn.Module):
-    def __init__(self, in_dim, hidden_dim, attention_dim, num_classes, dropout):
-        super().__init__()
-        self.instance_encoder = nn.Sequential(nn.Linear(in_dim, hidden_dim), nn.ReLU(), nn.Dropout(dropout))
-        self.attention_V = nn.Sequential(nn.Linear(hidden_dim, attention_dim), nn.Tanh())
-        self.attention_U = nn.Sequential(nn.Linear(hidden_dim, attention_dim), nn.Sigmoid())
-        self.attention_w = nn.Linear(attention_dim, 1)
-        self.classifier = nn.Linear(hidden_dim, num_classes)
-
-    def forward(self, instances):
-        h = self.instance_encoder(instances)
-        gated = self.attention_V(h) * self.attention_U(h)
-        weights = torch.softmax(self.attention_w(gated).squeeze(-1), dim=0)
-        bag = (weights.unsqueeze(-1) * h).sum(dim=0)
-        logits = self.classifier(bag)
-        return {"slide_probs": torch.softmax(logits, dim=0), "attention_weights": weights}
-
-
-# ---------- chargement des modeles (une seule fois, au demarrage de l'app) ----------
+# ---------- chargement du modele de classification (une seule fois) ----------
 _backbone = timm.create_model("efficientnet_b0", pretrained=False, num_classes=len(CLASS_NAMES))
 _ckpt = torch.load(BUNDLE_DIR / "efficientnet_b0.pt", map_location=DEVICE, weights_only=False)
 _backbone.load_state_dict(_ckpt["state_dict"])
-_global = torch.load(BUNDLE_DIR / "global_fedbn_state.pt", map_location=DEVICE, weights_only=False)
-_apply_fedbn_params(_backbone, torch.tensor(_global["flat_params"], device=DEVICE, dtype=torch.float32))
 _backbone.to(DEVICE).eval()
 
-_laplace = Laplace(_backbone, likelihood="classification", subset_of_weights=CFG["laplace"]["subset_of_weights"],
-                    hessian_structure=CFG["laplace"]["hessian_structure"], prior_precision=CFG["laplace"]["prior_precision"])
-_laplace.load_state_dict(torch.load(BUNDLE_DIR / "laplace_state_fedbn.pt", map_location=DEVICE, weights_only=False))
+_laplace = Laplace(_backbone, likelihood="classification",
+                    subset_of_weights=CFG["laplace"]["subset_of_weights"],
+                    hessian_structure=CFG["laplace"]["hessian_structure"],
+                    prior_precision=CFG["laplace"]["prior_precision"])
+_laplace.load_state_dict(torch.load(BUNDLE_DIR / "laplace_state.pt", map_location=DEVICE, weights_only=False))
 
-_mil = AttentionMIL(2 * len(CLASS_NAMES), CFG["mil"]["hidden_dim"], CFG["mil"]["attention_dim"], len(CLASS_NAMES), CFG["mil"]["dropout"]).to(DEVICE)
-_mil.load_state_dict(torch.load(BUNDLE_DIR / "attention_mil.pt", map_location=DEVICE, weights_only=False)["state_dict"])
-_mil.eval()
+# Segmentation : OPTIONNELLE, uniquement pour les visualisations/ROI, jamais
+# pour la classification elle-meme. Mettre "hovernet_model" absent de
+# inference_config.json pour la desactiver entierement (reponse plus rapide).
+_segmentor = None
+if CFG.get("hovernet_model"):
+    from tiatoolbox.models.engine.nucleus_instance_segmentor import NucleusInstanceSegmentor
+    _segmentor = NucleusInstanceSegmentor(model=CFG["hovernet_model"], batch_size=4, num_workers=0, device=str(DEVICE))
+else:
+    print("[predict] segmentation disabled: no hovernet_model configured in model_bundle/inference_config.json")
 
-_segmentor = NucleusInstanceSegmentor(model=CFG["hovernet_model"], batch_size=4, num_workers=0, device=str(DEVICE))
+
+def _classify(image_rgb: np.ndarray) -> dict:
+    """Classifie une image (crop de cellule ou image entiere) -> mu (probabilite
+    calibree par classe) + sigma (incertitude bayesienne), via Laplace."""
+    tensor = _TRANSFORM(Image.fromarray(image_rgb)).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        samples = _laplace.predictive_samples(tensor, n_samples=30)
+    return {"mu": samples.mean(dim=0)[0].cpu().numpy(), "sigma": samples.std(dim=0)[0].cpu().numpy(), "tensor": tensor}
+
+
+def _run_segmentation(image_rgb: np.ndarray):
+    """Segmentation HoVer-Net optionnelle. Ne bloque jamais : retourne
+    (None, []) au moindre probleme, l'appelant traite ca comme 'pas de ROI'."""
+    if _segmentor is None:
+        print("[predict] segmentation skipped: HoVer-Net model is not available")
+        return None, []
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            img_path = Path(tmp) / "upload.png"
+            cv2.imwrite(str(img_path), cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
+            result = _segmentor.run(
+                images=[str(img_path)], save_dir=str(Path(tmp) / "raw"), patch_mode=False,
+                input_resolutions=[{"units": "baseline", "resolution": 1.0}],
+                auto_get_mask=False, overwrite=True,
+            )
+            inst_dict = read_tiatoolbox_zarr(result[img_path])
+    except Exception as exc:
+        print(f"[predict] segmentation ignoree : {exc}")
+        return None, []
+
+    min_area = CFG.get("min_nucleus_area", 20)
+    inst_map = np.zeros(image_rgb.shape[:2], dtype=np.int32)
+    nuclei = []
+    for nid, nucleus in inst_dict.items():
+        contour = np.array(nucleus["contour"], dtype=np.int32)
+        if cv2.contourArea(contour) < min_area:
+            continue
+        cv2.drawContours(inst_map, [contour], -1, int(nid), thickness=-1)
+        nuclei.append({"id": int(nid), "contour": contour, "centroid": nucleus["centroid"]})
+    return inst_map, nuclei
 
 
 def predict(image: Image.Image) -> dict:
     image_rgb = np.array(image.convert("RGB"))
-    inst_dict = {}
-    with tempfile.TemporaryDirectory() as tmp:
-        img_path = Path(tmp) / "upload.png"
-        cv2.imwrite(str(img_path), cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
-        try:
-            result = _segmentor.run(
-                images=[str(img_path)], save_dir=str(Path(tmp) / "raw"), patch_mode=False,
-                input_resolutions=[{"units": "baseline", "resolution": 1.0}], auto_get_mask=False, overwrite=True,
-            )
-            inst_dict = read_tiatoolbox_zarr(result[img_path])
-            print(f"[predict] segmentation terminee : {len(inst_dict)} noyaux detectes")
-        except Exception as exc:
-            print(f"[predict] segmentation failed, using fallback path: {exc}")
 
-    inst_map = np.zeros(image_rgb.shape[:2], dtype=np.int32)
-    crops, centroids, nucleus_ids = [], [], []
-    if not inst_dict:
-        fallback_centroid = (image_rgb.shape[1] / 2, image_rgb.shape[0] / 2)
-        crops.append(image_rgb.copy())
-        centroids.append(fallback_centroid)
-        nucleus_ids.append(0)
-    else:
-        for nid, nucleus in inst_dict.items():
-            contour = np.array(nucleus["contour"], dtype=np.int32)
-            if cv2.contourArea(contour) < MIN_AREA:
-                continue
-            cv2.drawContours(inst_map, [contour], -1, int(nid), thickness=-1)
-            crops.append(crop_nucleus(image_rgb, nucleus["centroid"], PATCH_SIZE))
-            centroids.append(nucleus["centroid"])
-            nucleus_ids.append(nid)
+    # --- Classification principale : sur l'image ENTIERE, comme le modele l'attend ---
+    result = _classify(image_rgb)
+    mu, sigma, tensor = result["mu"], result["sigma"], result["tensor"]
+    pred_idx = int(mu.argmax())
 
-    nucleus_mask_img = Image.fromarray(((inst_map > 0) * 255).astype(np.uint8))
-    background_mask_img = Image.fromarray(((inst_map == 0) * 255).astype(np.uint8))  # approximation, voir docstring
-    overlay = image_rgb.copy()
-    cv2.drawContours(overlay, [np.array(inst_dict[n]["contour"], dtype=np.int32) for n in nucleus_ids], -1, (255, 0, 0), 1)
-
-    if not crops:
-        return {"predicted_class": "NILM", "confidence": 0.0, "probabilities": {c: 0.0 for c in CLASS_NAMES},
-                "segmentation": {"overlay": Image.fromarray(overlay), "background": background_mask_img,
-                                  "cytoplasm": background_mask_img, "nucleus": nucleus_mask_img},
-                "gradcam": {"heatmap": image.copy(), "overlay": image.copy(), "attention_overlay": image.copy()},
-                "regions_of_interest": []}
-
-    print(f"[predict] {len(crops)} crops extraits, debut de l'echantillonnage Laplace (30 passes)...")
-    batch = torch.stack([_TRANSFORM(Image.fromarray(c)) for c in crops]).to(DEVICE)
-    with torch.no_grad():
-        samples = _laplace.predictive_samples(batch, n_samples=30)
-    print("[predict] echantillonnage Laplace termine")
-    mu, sigma = samples.mean(dim=0).cpu().numpy(), samples.std(dim=0).cpu().numpy()
-
-    features = torch.tensor(np.concatenate([mu, sigma], axis=1), dtype=torch.float32).to(DEVICE)
-    with torch.no_grad():
-        mil_out = _mil(features)
-    slide_probs = mil_out["slide_probs"].cpu().numpy()
-    attn = mil_out["attention_weights"].cpu().numpy()
-    pred_idx = int(slide_probs.argmax())
-
-    order = np.argsort(-attn)[:CFG["top_k_cells"]]
-    regions_of_interest, attn_overlay = [], overlay.copy()
-    for i in order:
-        w = float(attn[i])
-        color = tuple(int(c * 255) for c in [1, 1 - w, 0])
-        cv2.circle(attn_overlay, (int(centroids[i][0]), int(centroids[i][1])), 2 + int(6 * w), color, -1)
-        cell_pred_idx = int(mu[i].argmax())
-        regions_of_interest.append({"id": int(nucleus_ids[i]), "predicted_class": CLASS_NAMES[cell_pred_idx],
-                                     "confidence": float(mu[i][cell_pred_idx]), "image": Image.fromarray(crops[i])})
-
-    top_i = order[0]
+    # --- Grad-CAM sur l'image entiere ---
     target_layer = dict(_backbone.named_modules())[CFG["gradcam_target_layer"]]
-    crop_tensor = _TRANSFORM(Image.fromarray(crops[top_i])).unsqueeze(0).to(DEVICE)
     with GradCAM(model=_backbone, target_layers=[target_layer]) as cam:
-        print("[predict] calcul du Grad-CAM...")
-        grayscale_cam = cam(input_tensor=crop_tensor, targets=[ClassifierOutputTarget(int(mu[top_i].argmax()))])[0]
-    crop_float = cv2.resize(crops[top_i], (IMAGE_SIZE, IMAGE_SIZE)).astype(np.float32) / 255.0
-    gradcam_overlay = show_cam_on_image(crop_float, grayscale_cam, use_rgb=True, image_weight=0.65)
+        grayscale_cam = cam(input_tensor=tensor, targets=[ClassifierOutputTarget(pred_idx)])[0]
+    image_resized = cv2.resize(image_rgb, (IMAGE_SIZE, IMAGE_SIZE))
+    heatmap_color = cv2.cvtColor(cv2.applyColorMap(np.uint8(255 * grayscale_cam), cv2.COLORMAP_JET), cv2.COLOR_BGR2RGB)
+    gradcam_overlay = show_cam_on_image(image_resized.astype(np.float32) / 255.0, grayscale_cam,
+                                         use_rgb=True, image_weight=0.6)
+
+    # --- Segmentation optionnelle : visualisation + regions d'interet uniquement ---
+    inst_map, nuclei = _run_segmentation(image_rgb)
+    regions_of_interest, segmentation = [], {}
+    if inst_map is not None and nuclei:
+        overlay = image_rgb.copy()
+        cv2.drawContours(overlay, [n["contour"] for n in nuclei], -1, (255, 0, 0), 1)
+        nucleus_mask = cv2.cvtColor(((inst_map > 0) * 255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        background_mask = cv2.cvtColor(((inst_map == 0) * 255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
+
+        patch_size = CFG.get("patch_size", IMAGE_SIZE)
+        for n in nuclei[:12]:  # limite raisonnable pour l'affichage
+            crop = crop_nucleus(image_rgb, n["centroid"], patch_size)
+            crop_result = _classify(crop)
+            crop_pred_idx = int(crop_result["mu"].argmax())
+            regions_of_interest.append({
+                "id": n["id"], "predicted_class": CLASS_NAMES[crop_pred_idx],
+                "confidence": float(crop_result["mu"][crop_pred_idx]), "image": _array_to_base64(crop),
+            })
+        segmentation = {
+            "overlay": _array_to_base64(overlay),
+            "background": _array_to_base64(background_mask),
+            "cytoplasm": _array_to_base64(background_mask),  # approximation, voir notebook
+            "nucleus": _array_to_base64(nucleus_mask),
+        }
 
     return {
-        "predicted_class": CLASS_NAMES[pred_idx], "confidence": float(slide_probs[pred_idx]),
-        "probabilities": {c: float(p) for c, p in zip(CLASS_NAMES, slide_probs)},
-        "segmentation": {"overlay": Image.fromarray(overlay), "background": background_mask_img,
-                          "cytoplasm": background_mask_img, "nucleus": nucleus_mask_img},
-        "gradcam": {"heatmap": Image.fromarray(_colorize_heatmap(grayscale_cam)),
-                    "overlay": Image.fromarray(_to_uint8_array(gradcam_overlay)),
-                    "attention_overlay": Image.fromarray(attn_overlay)},
+        "predicted_class": CLASS_NAMES[pred_idx],
+        "confidence": float(mu[pred_idx]),
+        "uncertainty": float(sigma[pred_idx]),
+        "probabilities": {c: float(p) for c, p in zip(CLASS_NAMES, mu)},
+        "gradcam": {"heatmap": _array_to_base64(heatmap_color), "overlay": _array_to_base64(gradcam_overlay)},
+        "segmentation": segmentation,
         "regions_of_interest": regions_of_interest,
     }

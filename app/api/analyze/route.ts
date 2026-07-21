@@ -18,5 +18,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!res.ok) return NextResponse.json({ error: "Inference failed" }, { status: 500 });
-  return NextResponse.json(await res.json());
+
+  const payload = await res.json();
+  return NextResponse.json(payload, { status: 200 });
 }

@@ -106,18 +106,19 @@ export function ImageAnalyzer() {
       const res = await fetch('/api/analyze', { method: 'POST', body: formData });
       const data = await res.json();
 
-      const assessment = normalizeAssessment(data.predicted_class);
+      const assessment = normalizeAssessment(data.predicted_class ?? 'nilm');
+      const roiList = Array.isArray(data.regions_of_interest) ? data.regions_of_interest : [];
 
       const results: Analysis = {
         assessment,
-        confidence: Math.round(data.confidence * 100),
-        findings: `Predicted class: ${data.predicted_class}. ${data.regions_of_interest.length} region(s) of interest identified.`,
+        confidence: Math.round((data.confidence ?? 0) * 100),
+        findings: `Predicted class: ${data.predicted_class ?? 'unknown'}. ${roiList.length} region(s) of interest identified.`,
         recommendation:
-          data.confidence < 0.5
+          (data.confidence ?? 0) < 0.5
             ? 'Low confidence — expert review strongly recommended.'
             : 'Expert review is recommended before establishing a final diagnosis.',
         probabilities: data.probabilities ?? undefined,
-        regions_of_interest: data.regions_of_interest?.map((roi: RegionOfInterest) => ({
+        regions_of_interest: roiList.map((roi: RegionOfInterest) => ({
           ...roi,
           predicted_class: roi.predicted_class,
         })),
@@ -160,6 +161,9 @@ export function ImageAnalyzer() {
     link.download = filename;
     link.click();
   };
+
+  const segmentation = analysis?.segmentation;
+  const hasSegmentation = Boolean(segmentation && Object.values(segmentation).some(Boolean));
 
   return (
     <div className="space-y-8">
@@ -413,41 +417,6 @@ export function ImageAnalyzer() {
                     </div>
                   )}
 
-                  {analysis.segmentation && (
-                    <div className="rounded-lg border border-border p-4 bg-secondary/30">
-                      <div className="flex items-center justify-between mb-3">
-                        <p className="text-sm font-medium text-foreground">Segmentation Masks</p>
-                        <p className="text-xs text-foreground/60">Nucleus, cytoplasm, and background masks</p>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                        {[
-                          { key: 'overlay', label: 'Segmentation Overlay' },
-                          { key: 'background', label: 'Background Mask' },
-                          { key: 'cytoplasm', label: 'Cytoplasm Mask' },
-                          { key: 'nucleus', label: 'Nucleus Mask' },
-                        ].map((item) => (
-                          <div key={item.key} className="rounded-md border border-border bg-white p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <p className="text-xs font-medium text-foreground">{item.label}</p>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => handleDownloadImage(analysis.segmentation![item.key as keyof SegmentationData], `${item.key}.png`)}
-                              >
-                                Save
-                              </Button>
-                            </div>
-                            <img
-                              src={`data:image/png;base64,${analysis.segmentation[item.key as keyof SegmentationData]}`}
-                              alt={item.label}
-                              className="w-full h-40 object-contain rounded bg-secondary/20"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
