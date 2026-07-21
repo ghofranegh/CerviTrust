@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Upload, X, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,35 @@ import { AnalysisResults } from '@/components/analysis-results';
 type AnalysisStatus = 'idle' | 'analyzing' | 'complete';
 type ScreeningResult = 'nilm' | 'lsil' | 'hsil';
 
+interface GradcamData {
+  heatmap: string;
+  overlay: string;
+  attention_overlay?: string;
+}
+
+interface SegmentationData {
+  overlay: string;
+  background: string;
+  cytoplasm: string;
+  nucleus: string;
+}
+
+interface RegionOfInterest {
+  id: number;
+  predicted_class: string;
+  confidence: number;
+  image: string;
+}
+
 interface Analysis {
   assessment: ScreeningResult;
   confidence: number;
   findings: string;
   recommendation: string;
+  probabilities?: Record<string, number>;
+  regions_of_interest?: RegionOfInterest[];
+  gradcam?: GradcamData;
+  segmentation?: SegmentationData;
 }
 
 export function ImageAnalyzer() {
@@ -23,7 +47,31 @@ export function ImageAnalyzer() {
   const [preview, setPreview] = useState<string | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadingMessages = [
+    'Analyzing image',
+    'Detecting nuclei',
+    'Generating heatmaps',
+    'Preparing report',
+  ];
+
+  const normalizeAssessment = (value: string): ScreeningResult => {
+    const normalized = value.toLowerCase();
+    if (normalized === 'scc') return 'hsil';
+    return normalized as ScreeningResult;
+  };
+
+  useEffect(() => {
+    if (status !== 'analyzing') return;
+
+    const interval = window.setInterval(() => {
+      setLoadingMessageIndex((current) => (current + 1) % loadingMessages.length);
+    }, 900);
+
+    return () => window.clearInterval(interval);
+  }, [status]);
 
   const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile.type.startsWith('image/')) {
@@ -58,8 +106,7 @@ export function ImageAnalyzer() {
       const res = await fetch('/api/analyze', { method: 'POST', body: formData });
       const data = await res.json();
 
-      const rawClass = data.predicted_class.toLowerCase();
-      const assessment: ScreeningResult = rawClass === 'scc' ? 'hsil' : (rawClass as ScreeningResult);
+      const assessment = normalizeAssessment(data.predicted_class);
 
       const results: Analysis = {
         assessment,
@@ -69,6 +116,26 @@ export function ImageAnalyzer() {
           data.confidence < 0.5
             ? 'Low confidence — expert review strongly recommended.'
             : 'Expert review is recommended before establishing a final diagnosis.',
+        probabilities: data.probabilities ?? undefined,
+        regions_of_interest: data.regions_of_interest?.map((roi: RegionOfInterest) => ({
+          ...roi,
+          predicted_class: roi.predicted_class,
+        })),
+        gradcam: data.gradcam
+          ? {
+              heatmap: data.gradcam.heatmap,
+              overlay: data.gradcam.overlay,
+              attention_overlay: data.gradcam.attention_overlay,
+            }
+          : undefined,
+        segmentation: data.segmentation
+          ? {
+              overlay: data.segmentation.overlay,
+              background: data.segmentation.background,
+              cytoplasm: data.segmentation.cytoplasm,
+              nucleus: data.segmentation.nucleus,
+            }
+          : undefined,
       };
 
       setAnalysis(results);
@@ -85,6 +152,13 @@ export function ImageAnalyzer() {
     setStatus('idle');
     setAnalysis(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDownloadImage = (base64Image: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${base64Image}`;
+    link.download = filename;
+    link.click();
   };
 
   return (
@@ -141,8 +215,9 @@ export function ImageAnalyzer() {
                     <Button onClick={handleAnalyze} disabled={status === 'analyzing'} size="lg" className="flex-1 bg-primary hover:bg-primary/90 text-white">
                       {status === 'analyzing' ? (
                         <>
-                          <span className="animate-spin inline-block mr-2">⏳</span>
-                          Analyzing...
+                          <span className="inline-block mr-2 animate-pulse">⏳</span>
+                          {loadingMessages[loadingMessageIndex]}
+                          <span className="ml-2 inline-block animate-bounce">…</span>
                         </>
                       ) : (
                         'Start Analysis'
@@ -218,6 +293,163 @@ export function ImageAnalyzer() {
                 <h3 className="text-lg font-semibold text-foreground">Findings Summary</h3>
                 <p className="text-base text-foreground/70 leading-relaxed">{analysis.findings}</p>
               </div>
+
+              {analysis.probabilities && (
+                <div className="space-y-4 border-b border-border pb-8">
+                  <h3 className="text-lg font-semibold text-foreground">Class Probabilities</h3>
+                  <div className="space-y-3">
+                    {Object.entries(analysis.probabilities).map(([label, value]) => (
+                      <div key={label} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-foreground/70">{label}</span>
+                          <span className="font-semibold text-foreground">{Math.round(value * 100)}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-foreground/10 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{ width: `${Math.max(4, Math.round(value * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {analysis.regions_of_interest && analysis.regions_of_interest.length > 0 && (
+                <div className="space-y-4 border-b border-border pb-8">
+                  <h3 className="text-lg font-semibold text-foreground">Regions of Interest</h3>
+                  <p className="text-sm text-foreground/60">
+                    High-attention nuclei identified during the analysis.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {analysis.regions_of_interest.map((roi) => (
+                      <div key={roi.id} className="rounded-lg border border-border bg-secondary/20 p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-foreground">ROI #{roi.id}</p>
+                          <span className="text-xs rounded-full bg-white px-2 py-1 text-foreground/70">
+                            {roi.predicted_class}
+                          </span>
+                        </div>
+                        <img
+                          src={`data:image/png;base64,${roi.image}`}
+                          alt={`Region of interest ${roi.id}`}
+                          className="w-full h-40 object-contain rounded-md bg-white"
+                        />
+                        <div className="flex items-center justify-between text-sm text-foreground/70">
+                          <span>Prediction confidence</span>
+                          <span className="font-semibold text-foreground">{Math.round(roi.confidence * 100)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Visualizations */}
+              {(analysis.gradcam || analysis.segmentation) && (
+                <div className="space-y-6 border-b border-border pb-8">
+                  <h3 className="text-lg font-semibold text-foreground">Visualizations</h3>
+
+                  {analysis.gradcam && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="rounded-lg border border-border p-4 bg-secondary/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-medium text-foreground">Activation Heatmap</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-foreground/20"
+                            onClick={() => handleDownloadImage(analysis.gradcam!.heatmap, 'gradcam-heatmap.png')}
+                          >
+                            Download
+                          </Button>
+                        </div>
+                        <img
+                          src={`data:image/png;base64,${analysis.gradcam.heatmap}`}
+                          alt="Grad-CAM heatmap"
+                          className="w-full h-64 object-contain rounded-md bg-white"
+                        />
+                      </div>
+                      <div className="rounded-lg border border-border p-4 bg-secondary/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-medium text-foreground">Grad-CAM Overlay</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-foreground/20"
+                            onClick={() => handleDownloadImage(analysis.gradcam!.overlay, 'gradcam-overlay.png')}
+                          >
+                            Download
+                          </Button>
+                        </div>
+                        <img
+                          src={`data:image/png;base64,${analysis.gradcam.overlay}`}
+                          alt="Grad-CAM overlay"
+                          className="w-full h-64 object-contain rounded-md bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {analysis.gradcam?.attention_overlay && (
+                    <div className="rounded-lg border border-border p-4 bg-secondary/30">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-medium text-foreground">Attention Overlay</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-foreground/20"
+                          onClick={() => handleDownloadImage(analysis.gradcam!.attention_overlay!, 'attention-overlay.png')}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                      <img
+                        src={`data:image/png;base64,${analysis.gradcam.attention_overlay}`}
+                        alt="Attention overlay"
+                        className="w-full h-64 object-contain rounded-md bg-white"
+                      />
+                    </div>
+                  )}
+
+                  {analysis.segmentation && (
+                    <div className="rounded-lg border border-border p-4 bg-secondary/30">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-medium text-foreground">Segmentation Masks</p>
+                        <p className="text-xs text-foreground/60">Nucleus, cytoplasm, and background masks</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                        {[
+                          { key: 'overlay', label: 'Segmentation Overlay' },
+                          { key: 'background', label: 'Background Mask' },
+                          { key: 'cytoplasm', label: 'Cytoplasm Mask' },
+                          { key: 'nucleus', label: 'Nucleus Mask' },
+                        ].map((item) => (
+                          <div key={item.key} className="rounded-md border border-border bg-white p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs font-medium text-foreground">{item.label}</p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => handleDownloadImage(analysis.segmentation![item.key as keyof SegmentationData], `${item.key}.png`)}
+                              >
+                                Save
+                              </Button>
+                            </div>
+                            <img
+                              src={`data:image/png;base64,${analysis.segmentation[item.key as keyof SegmentationData]}`}
+                              alt={item.label}
+                              className="w-full h-40 object-contain rounded bg-secondary/20"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Recommendation */}
               <div className="space-y-4">

@@ -28,6 +28,40 @@ _TRANSFORM = transforms.Compose([
 ])
 
 
+def _to_uint8_array(array: np.ndarray) -> np.ndarray:
+    arr = np.asarray(array)
+    if arr.dtype == np.uint8:
+        return arr
+
+    arr = arr.astype(np.float32)
+    if arr.max() <= 1.0:
+        arr = np.clip(arr, 0, 1) * 255.0
+    else:
+        arr = np.clip(arr, 0, 255)
+    return arr.astype(np.uint8)
+
+
+def _normalize_heatmap(heatmap: np.ndarray) -> np.ndarray:
+    arr = np.asarray(heatmap, dtype=np.float32)
+    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+    if arr.size == 0:
+        return arr
+
+    min_val = float(np.min(arr))
+    max_val = float(np.max(arr))
+    if np.isclose(min_val, max_val):
+        return np.zeros_like(arr, dtype=np.float32)
+
+    return (arr - min_val) / (max_val - min_val)
+
+
+def _colorize_heatmap(heatmap: np.ndarray) -> np.ndarray:
+    normalized = _normalize_heatmap(heatmap)
+    heatmap_uint8 = np.clip(normalized * 255.0, 0, 255).astype(np.uint8)
+    colorized = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+    return cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB)
+
+
 def crop_nucleus(image, centroid, patch_size):
     h, w = image.shape[:2]
     half = patch_size // 2
@@ -98,27 +132,36 @@ _segmentor = NucleusInstanceSegmentor(model=CFG["hovernet_model"], batch_size=4,
 
 def predict(image: Image.Image) -> dict:
     image_rgb = np.array(image.convert("RGB"))
+    inst_dict = {}
     with tempfile.TemporaryDirectory() as tmp:
         img_path = Path(tmp) / "upload.png"
         cv2.imwrite(str(img_path), cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
-        result = _segmentor.run(
-            images=[str(img_path)], save_dir=str(Path(tmp) / "raw"), patch_mode=False,
-            input_resolutions=[{"units": "baseline", "resolution": 1.0}], auto_get_mask=False, overwrite=True,
-        )
-        inst_dict = read_tiatoolbox_zarr(result[img_path])
-        print(f"[predict] segmentation terminee : {len(inst_dict)} noyaux detectes")
-
+        try:
+            result = _segmentor.run(
+                images=[str(img_path)], save_dir=str(Path(tmp) / "raw"), patch_mode=False,
+                input_resolutions=[{"units": "baseline", "resolution": 1.0}], auto_get_mask=False, overwrite=True,
+            )
+            inst_dict = read_tiatoolbox_zarr(result[img_path])
+            print(f"[predict] segmentation terminee : {len(inst_dict)} noyaux detectes")
+        except Exception as exc:
+            print(f"[predict] segmentation failed, using fallback path: {exc}")
 
     inst_map = np.zeros(image_rgb.shape[:2], dtype=np.int32)
     crops, centroids, nucleus_ids = [], [], []
-    for nid, nucleus in inst_dict.items():
-        contour = np.array(nucleus["contour"], dtype=np.int32)
-        if cv2.contourArea(contour) < MIN_AREA:
-            continue
-        cv2.drawContours(inst_map, [contour], -1, int(nid), thickness=-1)
-        crops.append(crop_nucleus(image_rgb, nucleus["centroid"], PATCH_SIZE))
-        centroids.append(nucleus["centroid"])
-        nucleus_ids.append(nid)
+    if not inst_dict:
+        fallback_centroid = (image_rgb.shape[1] / 2, image_rgb.shape[0] / 2)
+        crops.append(image_rgb.copy())
+        centroids.append(fallback_centroid)
+        nucleus_ids.append(0)
+    else:
+        for nid, nucleus in inst_dict.items():
+            contour = np.array(nucleus["contour"], dtype=np.int32)
+            if cv2.contourArea(contour) < MIN_AREA:
+                continue
+            cv2.drawContours(inst_map, [contour], -1, int(nid), thickness=-1)
+            crops.append(crop_nucleus(image_rgb, nucleus["centroid"], PATCH_SIZE))
+            centroids.append(nucleus["centroid"])
+            nucleus_ids.append(nid)
 
     nucleus_mask_img = Image.fromarray(((inst_map > 0) * 255).astype(np.uint8))
     background_mask_img = Image.fromarray(((inst_map == 0) * 255).astype(np.uint8))  # approximation, voir docstring
@@ -129,7 +172,8 @@ def predict(image: Image.Image) -> dict:
         return {"predicted_class": "NILM", "confidence": 0.0, "probabilities": {c: 0.0 for c in CLASS_NAMES},
                 "segmentation": {"overlay": Image.fromarray(overlay), "background": background_mask_img,
                                   "cytoplasm": background_mask_img, "nucleus": nucleus_mask_img},
-                "gradcam": {"heatmap": image.copy(), "overlay": image.copy()}, "regions_of_interest": []}
+                "gradcam": {"heatmap": image.copy(), "overlay": image.copy(), "attention_overlay": image.copy()},
+                "regions_of_interest": []}
 
     print(f"[predict] {len(crops)} crops extraits, debut de l'echantillonnage Laplace (30 passes)...")
     batch = torch.stack([_TRANSFORM(Image.fromarray(c)) for c in crops]).to(DEVICE)
@@ -169,7 +213,8 @@ def predict(image: Image.Image) -> dict:
         "probabilities": {c: float(p) for c, p in zip(CLASS_NAMES, slide_probs)},
         "segmentation": {"overlay": Image.fromarray(overlay), "background": background_mask_img,
                           "cytoplasm": background_mask_img, "nucleus": nucleus_mask_img},
-        "gradcam": {"heatmap": Image.fromarray((grayscale_cam * 255).astype(np.uint8)),
-                    "overlay": Image.fromarray(attn_overlay)},
+        "gradcam": {"heatmap": Image.fromarray(_colorize_heatmap(grayscale_cam)),
+                    "overlay": Image.fromarray(_to_uint8_array(gradcam_overlay)),
+                    "attention_overlay": Image.fromarray(attn_overlay)},
         "regions_of_interest": regions_of_interest,
     }
