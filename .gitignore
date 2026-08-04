@@ -9,6 +9,11 @@ __v0_jsx-dev-runtime.ts
 # Environment variables
 .env*.local
 
+# Virtual environments
+venv/
+.venv/
+env/
+
 # Common ignores
 node_modules
 .next/

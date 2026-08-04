@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/status-badge';
 import { MedicalCard } from '@/components/medical-card';
 import { AnalysisResults } from '@/components/analysis-results';
+import { getStoredDoctorToken } from '@/lib/client-auth';
 
 type AnalysisStatus = 'idle' | 'analyzing' | 'complete';
 type ScreeningResult = 'nilm' | 'lsil' | 'hsil';
@@ -42,12 +43,27 @@ interface Analysis {
   segmentation?: SegmentationData;
 }
 
-export function ImageAnalyzer() {
+interface DoctorProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  hospital: string;
+  specialty: string;
+  phone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | null; onSaved?: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfile | null>(doctor ?? null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [patientInfo, setPatientInfo] = useState({ patientName: '', patientId: '', dateOfBirth: '', notes: '' });
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadingMessages = [
@@ -72,6 +88,34 @@ export function ImageAnalyzer() {
 
     return () => window.clearInterval(interval);
   }, [status]);
+
+  useEffect(() => {
+    if (doctor) {
+      setDoctorProfile(doctor);
+      return;
+    }
+
+    const token = getStoredDoctorToken();
+    if (!token) {
+      setDoctorProfile(null);
+      return;
+    }
+
+    void fetch('/api/auth/me', {
+      headers: { 'x-doctor-token': token },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.doctor) {
+          setDoctorProfile(data.doctor);
+        } else {
+          setDoctorProfile(null);
+        }
+      })
+      .catch(() => {
+        setDoctorProfile(null);
+      });
+  }, [doctor]);
 
   const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile.type.startsWith('image/')) {
@@ -152,7 +196,48 @@ export function ImageAnalyzer() {
     setPreview(null);
     setStatus('idle');
     setAnalysis(null);
+    setPatientInfo({ patientName: '', patientId: '', dateOfBirth: '', notes: '' });
+    setSaveMessage('');
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleSaveAnalysis = async () => {
+    if (!analysis || !doctorProfile) return;
+
+    setSaveLoading(true);
+    setSaveMessage('');
+
+    try {
+      const token = getStoredDoctorToken();
+      const res = await fetch('/api/analyses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-doctor-token': token ?? '',
+        },
+        body: JSON.stringify({
+          patientName: patientInfo.patientName,
+          patientId: patientInfo.patientId,
+          dateOfBirth: patientInfo.dateOfBirth,
+          notes: patientInfo.notes,
+          assessment: analysis.assessment,
+          confidence: analysis.confidence,
+          findings: analysis.findings,
+          recommendation: analysis.recommendation,
+          analysisData: analysis,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to save report');
+      setSaveMessage('Report saved successfully.');
+      setPatientInfo((current) => ({ ...current, notes: '' }));
+      onSaved?.();
+    } catch (err) {
+      console.error(err);
+      setSaveMessage(err instanceof Error ? err.message : 'Unable to save report');
+    } finally {
+      setSaveLoading(false);
+    }
   };
 
   const handleDownloadImage = (base64Image: string, filename: string) => {
@@ -419,6 +504,46 @@ export function ImageAnalyzer() {
 
                 </div>
               )}
+
+              <div className="space-y-4 border-b border-border pb-8">
+                <h3 className="text-lg font-semibold text-foreground">Save Report for Patient</h3>
+                {!doctorProfile ? (
+                  <p className="text-sm text-foreground/60">Sign in to attach patient details and save this analysis to your account.</p>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <input
+                      className="rounded-lg border border-border px-3 py-2"
+                      placeholder="Patient name"
+                      value={patientInfo.patientName}
+                      onChange={(event) => setPatientInfo({ ...patientInfo, patientName: event.target.value })}
+                    />
+                    <input
+                      className="rounded-lg border border-border px-3 py-2"
+                      placeholder="Patient ID"
+                      value={patientInfo.patientId}
+                      onChange={(event) => setPatientInfo({ ...patientInfo, patientId: event.target.value })}
+                    />
+                    <input
+                      className="rounded-lg border border-border px-3 py-2"
+                      placeholder="Date of birth"
+                      value={patientInfo.dateOfBirth}
+                      onChange={(event) => setPatientInfo({ ...patientInfo, dateOfBirth: event.target.value })}
+                    />
+                    <textarea
+                      className="md:col-span-2 min-h-24 rounded-lg border border-border px-3 py-2"
+                      placeholder="Clinical notes"
+                      value={patientInfo.notes}
+                      onChange={(event) => setPatientInfo({ ...patientInfo, notes: event.target.value })}
+                    />
+                    <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+                      <Button onClick={handleSaveAnalysis} disabled={saveLoading || !doctorProfile}>
+                        {saveLoading ? 'Saving…' : 'Save report'}
+                      </Button>
+                      {saveMessage ? <span className="text-sm text-foreground/70">{saveMessage}</span> : null}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Recommendation */}
               <div className="space-y-4">

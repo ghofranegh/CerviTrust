@@ -17,7 +17,7 @@ export default function AnalysisPage() {
           </p>
         </div>
 
-        <ImageAnalyzer />
+        <ImageAnalyzer doctor={null} />
       </section>
 
       <Footer />
