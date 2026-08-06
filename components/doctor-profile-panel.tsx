@@ -5,16 +5,7 @@ import { Camera, Pencil, Trash2, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getStoredDoctorToken, setStoredDoctorToken } from '@/lib/client-auth';
 
-interface DoctorProfile {
-  id: string;
-  fullName: string;
-  email: string;
-  hospital: string;
-  specialty: string;
-  phone: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { DoctorProfile } from '@/lib/analysis-types';
 
 export function DoctorProfilePanel({ doctor, onLogout }: { doctor: DoctorProfile; onLogout?: () => void }) {
   const [profile, setProfile] = useState(doctor);
@@ -138,6 +129,9 @@ export function DoctorProfilePanel({ doctor, onLogout }: { doctor: DoctorProfile
           <div>
             <p className="font-semibold text-foreground">{profile.fullName}</p>
             <p className="text-sm text-foreground/60">{profile.hospital || 'Hospital not provided'}</p>
+            <span className="mt-1 inline-flex rounded-md border border-border bg-white px-2 py-0.5 text-xs text-foreground/70">
+              {profile.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
+            </span>
           </div>
         </div>
 

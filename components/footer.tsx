@@ -28,6 +28,16 @@ export function Footer() {
                 </a>
               </li>
               <li>
+                <a href="/dashboard" className="text-foreground/70 hover:text-foreground transition-colors">
+                  Dashboard
+                </a>
+              </li>
+              <li>
+                <a href="/saved-reports" className="text-foreground/70 hover:text-foreground transition-colors">
+                  Saved Reports
+                </a>
+              </li>
+              <li>
                 <a href="/system" className="text-foreground/70 hover:text-foreground transition-colors">
                   System Overview
                 </a>

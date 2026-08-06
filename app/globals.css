@@ -197,6 +197,31 @@
   }
 }
 
+/* Print: keep only the report body so "Export as PDF" produces a clean document */
+@media print {
+  nav,
+  footer {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  #cervitrust-report {
+    border: none;
+    padding: 0;
+  }
+
+  #cervitrust-report img {
+    break-inside: avoid;
+  }
+
+  #cervitrust-report section {
+    break-inside: avoid;
+  }
+}
+
 /* Status badge colors */
 .badge-success {
   @apply bg-status-success/10 text-status-success border border-status-success/20;

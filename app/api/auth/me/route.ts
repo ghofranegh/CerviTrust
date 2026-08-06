@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDoctorFromToken } from '@/lib/doctor-store';
+import { getDoctorFromToken, publicDoctor } from '@/lib/doctor-store';
 
 export const runtime = 'nodejs';
 
@@ -14,5 +14,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ doctor: null }, { status: 401 });
   }
 
-  return NextResponse.json({ doctor }, { status: 200 });
+  return NextResponse.json({ doctor: publicDoctor(doctor) }, { status: 200 });
 }

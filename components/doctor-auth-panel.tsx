@@ -4,16 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { getStoredDoctorToken, setStoredDoctorToken } from '@/lib/client-auth';
 
-interface DoctorProfile {
-  id: string;
-  fullName: string;
-  email: string;
-  hospital: string;
-  specialty: string;
-  phone: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { DoctorProfile } from '@/lib/analysis-types';
 
 export function DoctorAuthPanel({ onAuthenticated }: { onAuthenticated?: (doctor: DoctorProfile) => void }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -25,6 +16,8 @@ export function DoctorAuthPanel({ onAuthenticated }: { onAuthenticated?: (doctor
     hospital: '',
     specialty: '',
     phone: '',
+    role: 'doctor' as 'doctor' | 'admin',
+    adminCode: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -111,6 +104,34 @@ export function DoctorAuthPanel({ onAuthenticated }: { onAuthenticated?: (doctor
       <form onSubmit={handleSubmit} className="space-y-3">
         {mode === 'signup' && (
           <>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { value: 'doctor', label: 'Doctor / Biologist', hint: 'Analyse smears and write reports' },
+                  { value: 'admin', label: 'Administrator', hint: 'Platform supervision and audit' },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, role: option.value })}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                    form.role === option.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
+                  }`}
+                >
+                  <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                  <span className="block text-xs text-foreground/60">{option.hint}</span>
+                </button>
+              ))}
+            </div>
+            {form.role === 'admin' ? (
+              <input
+                className="w-full rounded-lg border border-border px-3 py-2"
+                placeholder="Administrator access code (if required)"
+                value={form.adminCode}
+                onChange={(event) => setForm({ ...form, adminCode: event.target.value })}
+              />
+            ) : null}
             <input
               className="w-full rounded-lg border border-border px-3 py-2"
               placeholder="Full name"

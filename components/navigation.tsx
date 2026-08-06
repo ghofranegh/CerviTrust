@@ -7,16 +7,7 @@ import { Menu, UserCircle2, X } from 'lucide-react';
 import Image from 'next/image';
 import { getStoredDoctorToken, setStoredDoctorToken } from '@/lib/client-auth';
 
-interface DoctorProfile {
-  id: string;
-  fullName: string;
-  email: string;
-  hospital: string;
-  specialty: string;
-  phone: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { DoctorProfile } from '@/lib/analysis-types';
 
 export function Navigation() {
   const pathname = usePathname();
@@ -26,7 +17,9 @@ export function Navigation() {
   const links = [
     { href: '/', label: 'Home' },
     { href: '/analysis', label: 'Analysis' },
+    ...(doctor ? [{ href: '/dashboard', label: 'Dashboard' }] : []),
     { href: '/saved-reports', label: 'Saved Reports' },
+    ...(doctor?.role === 'admin' ? [{ href: '/admin', label: 'Administration' }] : []),
     { href: '/system', label: 'System Overview' },
     { href: '/about', label: 'About' },
   ];
@@ -81,17 +74,21 @@ export function Navigation() {
             <span className="text-xl font-semibold text-foreground">CerviTrust</span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-1">
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${isActive(link.href)}`}
+                className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${isActive(link.href)}`}
               >
                 {link.label}
               </Link>
             ))}
-            <Link href="/doctor" className="ml-2 flex items-center gap-2 rounded-full border border-border bg-secondary/50 p-1.5 text-sm font-medium text-foreground/80">
+            <Link
+              href="/doctor"
+              className="ml-2 flex items-center gap-2 rounded-full border border-border bg-secondary/50 p-1.5 text-sm font-medium text-foreground/80"
+              title={doctor ? `${doctor.fullName} — ${doctor.role === 'admin' ? 'Administrator' : 'Practitioner'}` : 'Doctor workspace'}
+            >
               {doctor ? (
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white">
                   {initials}
@@ -104,13 +101,13 @@ export function Navigation() {
             </Link>
           </div>
 
-          <button className="md:hidden p-2" onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
+          <button className="lg:hidden p-2" onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
 
         {isOpen && (
-          <div className="md:hidden pb-4 border-t border-border">
+          <div className="lg:hidden pb-4 border-t border-border">
             {links.map((link) => (
               <Link
                 key={link.href}
@@ -131,7 +128,9 @@ export function Navigation() {
                   <UserCircle2 size={18} />
                 </span>
               )}
-              <span>{doctor ? doctor.fullName : 'Doctor workspace'}</span>
+              <span>
+                {doctor ? `${doctor.fullName} · ${doctor.role === 'admin' ? 'Administrator' : 'Practitioner'}` : 'Doctor workspace'}
+              </span>
             </Link>
           </div>
         )}

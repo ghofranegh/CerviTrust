@@ -2,6 +2,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
+export type DoctorRole = 'doctor' | 'admin';
+
 export interface DoctorRecord {
   id: string;
   fullName: string;
@@ -10,15 +12,26 @@ export interface DoctorRecord {
   hospital: string;
   specialty: string;
   phone: string;
+  role: DoctorRole;
   createdAt: string;
   updatedAt: string;
 }
+
+/** Doctor record without the credential material — this is what leaves the API. */
+export type PublicDoctor = Omit<DoctorRecord, 'passwordHash'>;
 
 export interface DoctorSession {
   id: string;
   doctorId: string;
   token: string;
   createdAt: string;
+}
+
+export interface CellReviewRecord {
+  decision: 'pending' | 'confirmed' | 'corrected' | 'flagged';
+  correctedClass?: string;
+  note?: string;
+  reviewedAt?: string;
 }
 
 export interface SavedAnalysis {
@@ -33,24 +46,62 @@ export interface SavedAnalysis {
   findings: string;
   recommendation: string;
   analysisData: Record<string, unknown>;
+  /** Doctor decision per detected cell, keyed by ROI id. */
+  cellReviews: Record<string, CellReviewRecord>;
+  reviewerObservations: string;
+  reportStatus: 'draft' | 'in_review' | 'validated';
+  priority: string;
+  qualityScore: number | null;
+  cellsDetected: number;
+  cellsReviewed: number;
+  validatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  doctorId: string | null;
+  doctorName: string;
+  type: string;
+  message: string;
+  createdAt: string;
 }
 
 interface DoctorStoreData {
   doctors: DoctorRecord[];
   sessions: DoctorSession[];
   analyses: SavedAnalysis[];
+  events: AuditEvent[];
 }
 
 const STORE_DIR = path.join(process.cwd(), 'data');
 const STORE_PATH = path.join(STORE_DIR, 'doctor-store.json');
+const MAX_EVENTS = 500;
 
 const defaultData: DoctorStoreData = {
   doctors: [],
   sessions: [],
   analyses: [],
+  events: [],
 };
+
+/** Fills in fields added after a store file was first written. */
+function migrateAnalysis(analysis: SavedAnalysis): SavedAnalysis {
+  const cellReviews = analysis.cellReviews ?? {};
+  const reviewed = Object.values(cellReviews).filter((review) => review.decision !== 'pending').length;
+  return {
+    ...analysis,
+    cellReviews,
+    reviewerObservations: analysis.reviewerObservations ?? '',
+    reportStatus: analysis.reportStatus ?? 'draft',
+    priority: analysis.priority ?? 'medium',
+    qualityScore: analysis.qualityScore ?? null,
+    cellsDetected: analysis.cellsDetected ?? 0,
+    cellsReviewed: analysis.cellsReviewed ?? reviewed,
+    validatedAt: analysis.validatedAt ?? null,
+  };
+}
 
 async function readStore(): Promise<DoctorStoreData> {
   await fs.mkdir(STORE_DIR, { recursive: true });
@@ -58,9 +109,13 @@ async function readStore(): Promise<DoctorStoreData> {
     const raw = await fs.readFile(STORE_PATH, 'utf8');
     const parsed = JSON.parse(raw) as DoctorStoreData;
     return {
-      doctors: Array.isArray(parsed.doctors) ? parsed.doctors : [],
+      doctors: (Array.isArray(parsed.doctors) ? parsed.doctors : []).map((doctor) => ({
+        ...doctor,
+        role: doctor.role ?? 'doctor',
+      })),
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      analyses: Array.isArray(parsed.analyses) ? parsed.analyses : [],
+      analyses: (Array.isArray(parsed.analyses) ? parsed.analyses : []).map(migrateAnalysis),
+      events: Array.isArray(parsed.events) ? parsed.events : [],
     };
   } catch {
     await writeStore(defaultData);
@@ -90,6 +145,17 @@ function sanitizeString(value: string | undefined): string {
   return (value ?? '').trim();
 }
 
+/** Strips the password hash before a record is sent to a client. */
+export function publicDoctor<T extends DoctorRecord>(doctor: T): PublicDoctor {
+  const { passwordHash: _passwordHash, ...rest } = doctor;
+  return rest;
+}
+
+function pushEvent(store: DoctorStoreData, event: Omit<AuditEvent, 'id' | 'createdAt'>): void {
+  store.events.unshift({ ...event, id: crypto.randomUUID(), createdAt: new Date().toISOString() });
+  store.events = store.events.slice(0, MAX_EVENTS);
+}
+
 export async function registerDoctor(input: {
   fullName: string;
   email: string;
@@ -97,6 +163,7 @@ export async function registerDoctor(input: {
   hospital: string;
   specialty: string;
   phone: string;
+  role?: DoctorRole;
 }) {
   const fullName = sanitizeString(input.fullName);
   const email = sanitizeString(input.email).toLowerCase();
@@ -104,6 +171,7 @@ export async function registerDoctor(input: {
   const hospital = sanitizeString(input.hospital);
   const specialty = sanitizeString(input.specialty);
   const phone = sanitizeString(input.phone);
+  const role: DoctorRole = input.role === 'admin' ? 'admin' : 'doctor';
 
   if (!fullName || !email || !password || !hospital) {
     throw new Error('Full name, email, password, and hospital are required.');
@@ -124,6 +192,7 @@ export async function registerDoctor(input: {
     hospital,
     specialty,
     phone,
+    role,
     createdAt: now,
     updatedAt: now,
   };
@@ -131,9 +200,15 @@ export async function registerDoctor(input: {
   const token = crypto.randomUUID();
   store.doctors.push(doctor);
   store.sessions.push({ id: crypto.randomUUID(), doctorId: doctor.id, token, createdAt: now });
+  pushEvent(store, {
+    doctorId: doctor.id,
+    doctorName: doctor.fullName,
+    type: 'account.created',
+    message: `${role === 'admin' ? 'Administrator' : 'Practitioner'} account created (${email})`,
+  });
   await writeStore(store);
 
-  return { doctor, token };
+  return { doctor: publicDoctor(doctor), token };
 }
 
 export async function loginDoctor(email: string, password: string) {
@@ -151,12 +226,18 @@ export async function loginDoctor(email: string, password: string) {
   const token = crypto.randomUUID();
   const now = new Date().toISOString();
   store.sessions.push({ id: crypto.randomUUID(), doctorId: doctor.id, token, createdAt: now });
+  pushEvent(store, {
+    doctorId: doctor.id,
+    doctorName: doctor.fullName,
+    type: 'session.signin',
+    message: `Signed in from ${doctor.hospital || 'unknown site'}`,
+  });
   await writeStore(store);
 
-  return { doctor, token };
+  return { doctor: publicDoctor(doctor), token };
 }
 
-export async function getDoctorFromToken(token: string) {
+export async function getDoctorFromToken(token: string): Promise<DoctorRecord | null> {
   const store = await readStore();
   const session = store.sessions.find((entry) => entry.token === token);
   if (!session) {
@@ -177,41 +258,210 @@ export async function updateDoctor(doctorId: string, updates: Partial<DoctorReco
     ...doctor,
     ...updates,
     id: doctor.id,
+    role: updates.role ?? doctor.role,
     email: (updates.email ?? doctor.email).toLowerCase(),
     passwordHash: updates.password ? hashPassword(updates.password) : doctor.passwordHash,
     updatedAt: new Date().toISOString(),
   };
 
   store.doctors = store.doctors.map((entry) => (entry.id === doctorId ? nextDoctor : entry));
+  pushEvent(store, {
+    doctorId: nextDoctor.id,
+    doctorName: nextDoctor.fullName,
+    type: 'account.updated',
+    message: 'Profile details updated',
+  });
   await writeStore(store);
-  return nextDoctor;
+  return publicDoctor(nextDoctor);
 }
 
 export async function deleteDoctor(doctorId: string) {
   const store = await readStore();
-  store.doctors = store.doctors.filter((doctor) => doctor.id !== doctorId);
+  const doctor = store.doctors.find((entry) => entry.id === doctorId);
+  store.doctors = store.doctors.filter((entry) => entry.id !== doctorId);
   store.sessions = store.sessions.filter((session) => session.doctorId !== doctorId);
   store.analyses = store.analyses.filter((analysis) => analysis.doctorId !== doctorId);
+  if (doctor) {
+    pushEvent(store, {
+      doctorId: null,
+      doctorName: doctor.fullName,
+      type: 'account.deleted',
+      message: `Account and related reports removed (${doctor.email})`,
+    });
+  }
   await writeStore(store);
 }
 
-export async function saveDoctorAnalysis(doctorId: string, payload: Omit<SavedAnalysis, 'id' | 'doctorId' | 'createdAt' | 'updatedAt'>) {
+export async function saveDoctorAnalysis(
+  doctorId: string,
+  payload: Partial<Omit<SavedAnalysis, 'id' | 'doctorId' | 'createdAt' | 'updatedAt'>>,
+) {
   const store = await readStore();
+  const doctor = store.doctors.find((entry) => entry.id === doctorId);
   const now = new Date().toISOString();
+  const cellReviews = payload.cellReviews ?? {};
+
   const analysis: SavedAnalysis = {
     id: crypto.randomUUID(),
     doctorId,
-    ...payload,
+    patientName: payload.patientName ?? '',
+    patientId: payload.patientId ?? '',
+    dateOfBirth: payload.dateOfBirth ?? '',
+    notes: payload.notes ?? '',
+    assessment: payload.assessment ?? '',
+    confidence: payload.confidence ?? 0,
+    findings: payload.findings ?? '',
+    recommendation: payload.recommendation ?? '',
+    analysisData: payload.analysisData ?? {},
+    cellReviews,
+    reviewerObservations: payload.reviewerObservations ?? '',
+    reportStatus: payload.reportStatus ?? 'draft',
+    priority: payload.priority ?? 'medium',
+    qualityScore: payload.qualityScore ?? null,
+    cellsDetected: payload.cellsDetected ?? 0,
+    cellsReviewed:
+      payload.cellsReviewed ?? Object.values(cellReviews).filter((review) => review.decision !== 'pending').length,
+    validatedAt: payload.reportStatus === 'validated' ? now : null,
     createdAt: now,
     updatedAt: now,
   };
 
   store.analyses.push(analysis);
+  pushEvent(store, {
+    doctorId,
+    doctorName: doctor?.fullName ?? 'Unknown practitioner',
+    type: 'report.saved',
+    message: `Report saved for ${analysis.patientName || 'unnamed patient'} — ${analysis.assessment.toUpperCase()} (${analysis.confidence}% confidence)`,
+  });
   await writeStore(store);
   return analysis;
 }
 
+export async function updateDoctorAnalysis(
+  doctorId: string,
+  analysisId: string,
+  updates: Partial<Pick<SavedAnalysis, 'cellReviews' | 'reviewerObservations' | 'reportStatus' | 'notes'>>,
+) {
+  const store = await readStore();
+  const doctor = store.doctors.find((entry) => entry.id === doctorId);
+  const existing = store.analyses.find((entry) => entry.id === analysisId);
+  if (!existing) {
+    throw new Error('Report not found.');
+  }
+  if (existing.doctorId !== doctorId && doctor?.role !== 'admin') {
+    throw new Error('This report belongs to another practitioner.');
+  }
+
+  const now = new Date().toISOString();
+  const cellReviews = updates.cellReviews ?? existing.cellReviews;
+  const reportStatus = updates.reportStatus ?? existing.reportStatus;
+  const next: SavedAnalysis = {
+    ...existing,
+    ...updates,
+    cellReviews,
+    reportStatus,
+    cellsReviewed: Object.values(cellReviews).filter((review) => review.decision !== 'pending').length,
+    validatedAt: reportStatus === 'validated' ? existing.validatedAt ?? now : null,
+    updatedAt: now,
+  };
+
+  store.analyses = store.analyses.map((entry) => (entry.id === analysisId ? next : entry));
+  if (updates.reportStatus && updates.reportStatus !== existing.reportStatus) {
+    pushEvent(store, {
+      doctorId,
+      doctorName: doctor?.fullName ?? 'Unknown practitioner',
+      type: 'report.status',
+      message: `Report for ${next.patientName || 'unnamed patient'} moved to "${next.reportStatus.replace('_', ' ')}"`,
+    });
+  }
+  await writeStore(store);
+  return next;
+}
+
 export async function listDoctorAnalyses(doctorId: string) {
   const store = await readStore();
-  return store.analyses.filter((analysis) => analysis.doctorId === doctorId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return store.analyses
+    .filter((analysis) => analysis.doctorId === doctorId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function listAuditEvents(limit = 25) {
+  const store = await readStore();
+  return store.events.slice(0, limit);
+}
+
+/** Aggregates the whole store for the administrator dashboard. */
+export async function getPlatformStats() {
+  const store = await readStore();
+  const analyses = store.analyses;
+
+  const doctors = store.doctors.map((doctor) => {
+    const own = analyses.filter((analysis) => analysis.doctorId === doctor.id);
+    return {
+      ...publicDoctor(doctor),
+      reportCount: own.length,
+      lastActivity: own[0]?.createdAt ?? doctor.updatedAt,
+    };
+  });
+
+  const byDay = new Map<string, { reports: number; validated: number; flagged: number }>();
+  for (const analysis of analyses) {
+    const day = analysis.createdAt.slice(0, 10);
+    const bucket = byDay.get(day) ?? { reports: 0, validated: 0, flagged: 0 };
+    bucket.reports += 1;
+    if (analysis.reportStatus === 'validated') bucket.validated += 1;
+    if (analysis.priority === 'high') bucket.flagged += 1;
+    byDay.set(day, bucket);
+  }
+
+  const assessments: Record<string, number> = {};
+  let qualitySum = 0;
+  let qualityCount = 0;
+  let cellsDetected = 0;
+  let cellsReviewed = 0;
+
+  for (const analysis of analyses) {
+    const key = (analysis.assessment || 'unknown').toUpperCase();
+    assessments[key] = (assessments[key] ?? 0) + 1;
+    if (typeof analysis.qualityScore === 'number') {
+      qualitySum += analysis.qualityScore;
+      qualityCount += 1;
+    }
+    cellsDetected += analysis.cellsDetected ?? 0;
+    cellsReviewed += analysis.cellsReviewed ?? 0;
+  }
+
+  return {
+    totals: {
+      doctors: store.doctors.filter((doctor) => doctor.role === 'doctor').length,
+      admins: store.doctors.filter((doctor) => doctor.role === 'admin').length,
+      activeSessions: new Set(store.sessions.map((session) => session.doctorId)).size,
+      reports: analyses.length,
+      validated: analyses.filter((analysis) => analysis.reportStatus === 'validated').length,
+      pending: analyses.filter((analysis) => analysis.reportStatus !== 'validated').length,
+      highPriority: analyses.filter((analysis) => analysis.priority === 'high').length,
+      cellsDetected,
+      cellsReviewed,
+      averageQuality: qualityCount ? Math.round(qualitySum / qualityCount) : null,
+    },
+    assessments,
+    activity: [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([day, value]) => ({ day, ...value })),
+    doctors: doctors.sort((a, b) => (b.lastActivity ?? '').localeCompare(a.lastActivity ?? '')),
+    events: store.events.slice(0, 20),
+    recentReports: [...analyses]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 10)
+      .map((analysis) => ({
+        id: analysis.id,
+        patientName: analysis.patientName,
+        patientId: analysis.patientId,
+        assessment: analysis.assessment,
+        confidence: analysis.confidence,
+        priority: analysis.priority,
+        reportStatus: analysis.reportStatus,
+        qualityScore: analysis.qualityScore,
+        createdAt: analysis.createdAt,
+        doctorName: store.doctors.find((doctor) => doctor.id === analysis.doctorId)?.fullName ?? 'Unknown',
+      })),
+  };
 }

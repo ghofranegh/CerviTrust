@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteDoctor, getDoctorFromToken, updateDoctor } from '@/lib/doctor-store';
+import { deleteDoctor, getDoctorFromToken, publicDoctor, updateDoctor } from '@/lib/doctor-store';
 
 export const runtime = 'nodejs';
 
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   }
 
   const doctor = await getDoctorFromToken(token);
-  return NextResponse.json({ doctor }, { status: doctor ? 200 : 401 });
+  return NextResponse.json({ doctor: doctor ? publicDoctor(doctor) : null }, { status: doctor ? 200 : 401 });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -26,7 +26,9 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const updated = await updateDoctor(doctor.id, body);
+    // Role changes never come from the profile form.
+    const { role: _role, ...safeUpdates } = body ?? {};
+    const updated = await updateDoctor(doctor.id, safeUpdates);
     return NextResponse.json({ doctor: updated }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update profile';
