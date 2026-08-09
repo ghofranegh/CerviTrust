@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Download, FileText, ShieldCheck } from 'lucide-react';
+import { Download, FileText, Lock, ShieldCheck } from 'lucide-react';
 import { DonutChart, MeterBar, classColor } from '@/components/charts';
 import {
   Analysis,
@@ -20,46 +20,7 @@ import {
   reviewLabel,
   toPercent,
 } from '@/lib/analysis-types';
-
-export interface PatientInfo {
-  patientName: string;
-  patientId: string;
-  dateOfBirth: string;
-  collectionDate: string;
-  sampleId: string;
-  notes: string;
-}
-
-/** Stable, non-identifying study reference derived from the sample identifiers. */
-function studyReference(patient: PatientInfo, analyzedAt?: string): string {
-  const date = (analyzedAt ?? new Date().toISOString()).slice(0, 10).replace(/-/g, '');
-  const seed = `${patient.patientId || patient.patientName || 'ANON'}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return `CT-${date}-${hash.toString(36).toUpperCase().padStart(5, '0').slice(0, 5)}`;
-}
-
-function pseudonymise(value: string): string {
-  if (!value) return '—';
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 33 + value.charCodeAt(i)) >>> 0;
-  }
-  return `PSEU-${hash.toString(16).toUpperCase().padStart(8, '0').slice(0, 8)}`;
-}
-
-function ageFrom(dateOfBirth: string): string {
-  if (!dateOfBirth) return '—';
-  const dob = new Date(dateOfBirth);
-  if (Number.isNaN(dob.getTime())) return '—';
-  const now = new Date();
-  let age = now.getFullYear() - dob.getFullYear();
-  const monthDelta = now.getMonth() - dob.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) age -= 1;
-  return `${age} years`;
-}
+import { PatientInfo, ageFrom, pseudonymise, studyReference } from '@/lib/report-utils';
 
 export function ReportPreview({
   analysis,
@@ -69,6 +30,8 @@ export function ReportPreview({
   onObservationsChange,
   status,
   onStatusChange,
+  canValidate = false,
+  savedAt = null,
 }: {
   analysis: Analysis;
   patient: PatientInfo;
@@ -77,6 +40,9 @@ export function ReportPreview({
   onObservationsChange: (value: string) => void;
   status: ReportStatus;
   onStatusChange: (status: ReportStatus) => void;
+  /** A report can only be validated once it exists in the store. */
+  canValidate?: boolean;
+  savedAt?: string | null;
 }) {
   const regions = analysis.regions_of_interest ?? [];
   const generatedAt = analysis.analyzedAt ? new Date(analysis.analyzedAt) : new Date();
@@ -158,13 +124,22 @@ export function ReportPreview({
           <button
             type="button"
             onClick={() => onStatusChange('validated')}
-            disabled={status === 'validated'}
+            disabled={status === 'validated' || !canValidate}
+            title={canValidate ? undefined : 'Save the report before validating it'}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
-            <ShieldCheck size={16} /> {status === 'validated' ? 'Report validated' : 'Validate report'}
+            {canValidate ? <ShieldCheck size={16} /> : <Lock size={16} />}
+            {status === 'validated' ? 'Report validated' : 'Validate report'}
           </button>
         </div>
       </div>
+
+      {!canValidate ? (
+        <p className="flex items-center gap-2 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-sm text-status-warning print:hidden">
+          <Lock size={16} className="flex-shrink-0" />
+          Save the report with the patient details above before it can be validated.
+        </p>
+      ) : null}
 
       <div id="cervitrust-report" className="rounded-lg border border-border bg-white p-6 md:p-8 space-y-8">
         {/* Report header */}
@@ -175,6 +150,9 @@ export function ReportPreview({
           </div>
           <div className="text-right">
             <p className="text-sm text-foreground/60">Generated on {generatedAt.toLocaleString()}</p>
+            <p className="text-xs text-foreground/50">
+              {savedAt ? `Saved on ${new Date(savedAt).toLocaleString()}` : 'Not saved yet'}
+            </p>
             <span className={`mt-1 inline-flex rounded-md border px-2 py-1 text-xs font-medium ${TONE_BADGE[reportStatusTone(status)]}`}>
               {reportStatusLabel(status)}
             </span>
@@ -401,14 +379,13 @@ export function ReportPreview({
           <div className="lg:col-span-2">
             <h5 className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">Reviewer observations</h5>
             <textarea
-              className="w-full min-h-28 rounded-lg border border-border px-3 py-2 text-sm print:hidden"
+              className="w-full min-h-28 rounded-lg border border-border px-3 py-2 text-sm"
               placeholder="Enter your observations, comments or recommendations…"
               maxLength={2000}
               value={observations}
               onChange={(event) => onObservationsChange(event.target.value)}
             />
-            <p className="hidden print:block text-sm text-foreground/80">{observations || '(to be completed)'}</p>
-            <p className="mt-1 text-right text-xs text-foreground/50 print:hidden">{observations.length} / 2000</p>
+            <p className="mt-1 text-right text-xs text-foreground/50">{observations.length} / 2000</p>
           </div>
 
           <div>
@@ -420,20 +397,34 @@ export function ReportPreview({
                   { value: 'in_review', hint: 'Awaiting second read' },
                   { value: 'validated', hint: 'Finalised and locked' },
                 ] as Array<{ value: ReportStatus; hint: string }>
-              ).map((option) => (
-                <label
-                  key={option.value}
-                  className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                    status === option.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
-                  }`}
-                >
-                  <span className="flex items-center gap-2 text-sm text-foreground">
-                    <input type="radio" name="report-status" checked={status === option.value} onChange={() => onStatusChange(option.value)} />
-                    {reportStatusLabel(option.value)}
-                  </span>
-                  <span className="text-xs text-foreground/60">{option.hint}</span>
-                </label>
-              ))}
+              ).map((option) => {
+                const locked = option.value === 'validated' && !canValidate;
+                return (
+                  <label
+                    key={option.value}
+                    title={locked ? 'Save the report before validating it' : undefined}
+                    className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors ${
+                      locked
+                        ? 'cursor-not-allowed border-border opacity-50'
+                        : status === option.value
+                          ? 'cursor-pointer border-primary bg-primary/5'
+                          : 'cursor-pointer border-border hover:bg-secondary'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-sm text-foreground">
+                      <input
+                        type="radio"
+                        name="report-status"
+                        disabled={locked}
+                        checked={status === option.value}
+                        onChange={() => onStatusChange(option.value)}
+                      />
+                      {reportStatusLabel(option.value)}
+                    </span>
+                    <span className="text-xs text-foreground/60">{locked ? 'Save first' : option.hint}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         </section>

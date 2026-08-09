@@ -197,28 +197,310 @@
   }
 }
 
-/* Print: keep only the report body so "Export as PDF" produces a clean document */
+/* ------------------------------------------------------------------ */
+/* Printable report document                                           */
+/* The on-screen app is hidden at print time and only .print-document  */
+/* is rendered, as a typographic A4 document — never a screen capture. */
+/* ------------------------------------------------------------------ */
+
+.print-document {
+  display: none;
+}
+
 @media print {
+  @page {
+    size: A4;
+    margin: 14mm 13mm;
+  }
+
   nav,
-  footer {
+  footer,
+  .screen-only {
     display: none !important;
   }
 
+  html,
   body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  /* The document owns the page: drop the app shell's screen spacing. */
+  main,
+  main > section {
+    display: block !important;
+    max-width: none !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print-document {
+    display: block;
+    color: #1a1a1a;
+    font-size: 9.5pt;
+    line-height: 1.45;
+  }
+
+  .print-document p {
+    color: #1a1a1a;
+    font-size: 9.5pt;
+    line-height: 1.45;
+  }
+
+  .pd-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12pt;
+    border-bottom: 2pt solid #c62828;
+    padding-bottom: 6pt;
+  }
+
+  .pd-brand {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #c62828;
+    letter-spacing: -0.01em;
+  }
+
+  .pd-sub {
+    font-size: 8.5pt;
+    color: #555555;
+  }
+
+  .pd-header-meta {
+    text-align: right;
+    font-size: 8.5pt;
+    color: #555555;
+  }
+
+  .pd-title {
+    margin-top: 10pt;
+    font-size: 14pt;
+    font-weight: 600;
+  }
+
+  /* Long sections may flow across pages; the pieces below stay whole. */
+  .pd-section {
+    margin-top: 12pt;
+  }
+
+  .pd-section > h2 {
+    break-after: avoid;
+  }
+
+  .pd-section > h2 {
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #c62828;
+    border-bottom: 0.5pt solid #cccccc;
+    padding-bottom: 2.5pt;
+    margin-bottom: 6pt;
+  }
+
+  .pd-break {
+    break-before: auto;
+  }
+
+  .pd-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6pt 14pt;
+    break-inside: avoid;
+  }
+
+  .pd-field {
+    display: block;
+  }
+
+  .pd-field .k {
+    display: block;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b6b6b;
+  }
+
+  .pd-field .v {
+    display: block;
+    font-size: 10pt;
+    font-weight: 600;
+  }
+
+  .pd-result {
+    display: flex;
+    align-items: flex-start;
+    gap: 14pt;
+    margin-bottom: 8pt;
+    break-inside: avoid;
+  }
+
+  .pd-result-main {
+    min-width: 34%;
+    border-left: 3pt solid #c62828;
+    padding-left: 8pt;
+  }
+
+  .pd-result-class {
+    display: block;
+    font-size: 20pt;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .pd-result-full {
+    display: block;
+    font-size: 8.5pt;
+    color: #555555;
+  }
+
+  .pd-result-figures {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5pt 12pt;
+    flex: 1;
+  }
+
+  .pd-note {
+    margin: 6pt 0;
+    font-size: 9pt;
+    color: #333333;
+  }
+
+  .pd-para {
+    margin-top: 5pt;
+    text-align: justify;
+  }
+
+  .pd-subhead {
+    margin-top: 8pt;
+    margin-bottom: 4pt;
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b6b6b;
+  }
+
+  table.pd-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 7pt;
+    font-size: 8.5pt;
+  }
+
+  table.pd-table caption {
+    caption-side: top;
+    text-align: left;
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b6b6b;
+    padding-bottom: 3pt;
+  }
+
+  .pd-table thead {
+    display: table-header-group;
+  }
+
+  .pd-table th {
+    text-align: left;
+    border-bottom: 0.75pt solid #333333;
+    padding: 3pt 5pt;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #333333;
+  }
+
+  .pd-table td {
+    border-bottom: 0.5pt solid #e2e2e2;
+    padding: 3pt 5pt;
+    vertical-align: top;
+  }
+
+  .pd-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pd-table tr {
+    break-inside: avoid;
+  }
+
+  .pd-figures {
+    display: flex;
+    gap: 8pt;
+  }
+
+  .pd-figure {
+    flex: 1;
+    break-inside: avoid;
+  }
+
+  .pd-figure img {
+    width: 100%;
+    height: 44mm;
+    object-fit: contain;
+    border: 0.5pt solid #d9d9d9;
     background: #ffffff;
   }
 
-  #cervitrust-report {
-    border: none;
-    padding: 0;
+  .pd-figure figcaption,
+  .pd-cell figcaption {
+    margin-top: 2pt;
+    font-size: 7.5pt;
+    color: #555555;
+    text-align: center;
   }
 
-  #cervitrust-report img {
+  .pd-cells {
+    display: flex;
+    gap: 8pt;
+  }
+
+  .pd-cell {
+    width: 26mm;
     break-inside: avoid;
   }
 
-  #cervitrust-report section {
+  .pd-cell img {
+    width: 26mm;
+    height: 26mm;
+    object-fit: cover;
+    border: 0.5pt solid #d9d9d9;
+  }
+
+  .pd-signature {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8pt 20pt;
     break-inside: avoid;
+  }
+
+  .pd-signature-line {
+    margin-top: 14pt;
+    border-top: 0.5pt solid #999999;
+    padding-top: 3pt;
+    font-size: 7.5pt;
+    color: #6b6b6b;
+  }
+
+  .pd-foot {
+    margin-top: 14pt;
+    border-top: 0.5pt solid #cccccc;
+    padding-top: 5pt;
+    font-size: 7.5pt;
+    color: #555555;
+  }
+
+  .pd-foot p {
+    font-size: 7.5pt;
+    color: #555555;
   }
 }
 

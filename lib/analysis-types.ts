@@ -160,6 +160,8 @@ export interface DoctorProfile {
   specialty: string;
   phone: string;
   role: 'doctor' | 'admin';
+  /** Profile picture as a data URL; empty when none has been uploaded. */
+  avatar: string;
   createdAt: string;
   updatedAt: string;
 }

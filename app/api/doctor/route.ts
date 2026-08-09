@@ -25,10 +25,18 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
-    // Role changes never come from the profile form.
-    const { role: _role, ...safeUpdates } = body ?? {};
-    const updated = await updateDoctor(doctor.id, safeUpdates);
+    const body = (await req.json()) ?? {};
+    // Only these fields can be set from the profile form — never the role.
+    const updated = await updateDoctor(doctor.id, {
+      fullName: body.fullName,
+      email: body.email,
+      hospital: body.hospital,
+      specialty: body.specialty,
+      phone: body.phone,
+      avatar: body.avatar,
+      currentPassword: body.currentPassword,
+      password: body.password,
+    });
     return NextResponse.json({ doctor: updated }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update profile';

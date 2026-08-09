@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDoctorFromToken, listDoctorAnalyses, saveDoctorAnalysis } from '@/lib/doctor-store';
+import { getDoctorFromToken, listDoctorAnalyses, missingPatientFields, saveDoctorAnalysis } from '@/lib/doctor-store';
 
 export const runtime = 'nodejs';
 
@@ -31,6 +31,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    // Patient identification is mandatory; the store rejects the write otherwise.
+    const missing = missingPatientFields(body ?? {});
+    if (missing.length) {
+      return NextResponse.json(
+        { error: `A report cannot be saved without patient information: add the ${missing.join(', ')}.`, missing },
+        { status: 422 },
+      );
+    }
+
     const analysis = await saveDoctorAnalysis(doctor.id, body);
     return NextResponse.json({ analysis }, { status: 201 });
   } catch (error) {

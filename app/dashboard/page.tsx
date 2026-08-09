@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Activity, CheckCircle2, ClipboardList, FileText, Microscope, ShieldAlert } from 'lucide-react';
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
+import { AuthGate } from '@/components/auth-gate';
 import { BarDistribution, DonutChart, StatTile, TrendChart, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
 import {
@@ -46,7 +47,17 @@ function recentDays(count: number): string[] {
 }
 
 export default function DashboardPage() {
-  const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
+  return (
+    <AuthGate
+      headline="Sign in to open your dashboard"
+      message="Your screening activity, review queue and quality trends live behind your account."
+    >
+      {(doctor) => <DashboardContent doctor={doctor} />}
+    </AuthGate>
+  );
+}
+
+function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -59,13 +70,8 @@ export default function DashboardPage() {
 
     void (async () => {
       try {
-        const [meRes, reportsRes] = await Promise.all([
-          fetch('/api/auth/me', { headers: { 'x-doctor-token': token } }),
-          fetch('/api/analyses', { headers: { 'x-doctor-token': token } }),
-        ]);
-        const me = await meRes.json();
-        const data = await reportsRes.json();
-        setDoctor(me.doctor ?? null);
+        const res = await fetch('/api/analyses', { headers: { 'x-doctor-token': token } });
+        const data = await res.json();
         setReports(Array.isArray(data.analyses) ? data.analyses : []);
       } catch {
         setReports([]);
@@ -162,7 +168,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-4xl font-semibold text-foreground mb-2">Practitioner dashboard</h1>
             <p className="text-foreground/60">
-              {doctor ? `${doctor.fullName} — ${doctor.hospital || 'no site recorded'}` : 'Your screening activity at a glance'}
+              {doctor.fullName} — {doctor.hospital || 'no site recorded'}
             </p>
           </div>
           <div className="flex gap-2">
@@ -177,13 +183,6 @@ export default function DashboardPage() {
 
         {loading ? (
           <p className="text-sm text-foreground/60">Loading your activity…</p>
-        ) : !doctor ? (
-          <div className="rounded-xl border border-border bg-white p-8 text-center">
-            <p className="text-foreground/70 mb-4">Sign in to see your screening activity.</p>
-            <Link href="/doctor" className="inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white">
-              Go to sign in
-            </Link>
-          </div>
         ) : (
           <div className="space-y-8">
             {/* KPI row */}

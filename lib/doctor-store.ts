@@ -13,9 +13,14 @@ export interface DoctorRecord {
   specialty: string;
   phone: string;
   role: DoctorRole;
+  /** Profile picture as a data URL, resized client-side before upload. */
+  avatar: string;
   createdAt: string;
   updatedAt: string;
 }
+
+/** Upper bound for a stored avatar: the store is a JSON file, not a blob store. */
+export const MAX_AVATAR_BYTES = 400_000;
 
 /** Doctor record without the credential material — this is what leaves the API. */
 export type PublicDoctor = Omit<DoctorRecord, 'passwordHash'>;
@@ -112,6 +117,7 @@ async function readStore(): Promise<DoctorStoreData> {
       doctors: (Array.isArray(parsed.doctors) ? parsed.doctors : []).map((doctor) => ({
         ...doctor,
         role: doctor.role ?? 'doctor',
+        avatar: doctor.avatar ?? '',
       })),
       sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
       analyses: (Array.isArray(parsed.analyses) ? parsed.analyses : []).map(migrateAnalysis),
@@ -193,6 +199,7 @@ export async function registerDoctor(input: {
     specialty,
     phone,
     role,
+    avatar: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -247,19 +254,58 @@ export async function getDoctorFromToken(token: string): Promise<DoctorRecord | 
   return doctor ?? null;
 }
 
-export async function updateDoctor(doctorId: string, updates: Partial<DoctorRecord> & { password?: string }) {
+export interface DoctorUpdate {
+  fullName?: string;
+  email?: string;
+  hospital?: string;
+  specialty?: string;
+  phone?: string;
+  avatar?: string;
+  role?: DoctorRole;
+  /** Required by the store whenever `password` is set. */
+  currentPassword?: string;
+  password?: string;
+}
+
+export async function updateDoctor(doctorId: string, updates: DoctorUpdate) {
   const store = await readStore();
   const doctor = store.doctors.find((entry) => entry.id === doctorId);
   if (!doctor) {
     throw new Error('Doctor profile not found.');
   }
 
+  // A new password is only accepted once the current one has been verified.
+  if (updates.password) {
+    if (!updates.currentPassword) {
+      throw new Error('Enter your current password before setting a new one.');
+    }
+    if (!verifyPassword(updates.currentPassword, doctor.passwordHash)) {
+      throw new Error('Your current password is incorrect.');
+    }
+    if (updates.password.length < 8) {
+      throw new Error('The new password must be at least 8 characters long.');
+    }
+  }
+
+  const email = sanitizeString(updates.email) ? sanitizeString(updates.email).toLowerCase() : doctor.email;
+  if (email !== doctor.email && store.doctors.some((entry) => entry.email === email)) {
+    throw new Error('Another account already uses this email.');
+  }
+
+  if (updates.avatar && updates.avatar.length > MAX_AVATAR_BYTES) {
+    throw new Error('The profile picture is too large. Please choose a smaller image.');
+  }
+
   const nextDoctor: DoctorRecord = {
     ...doctor,
-    ...updates,
+    fullName: sanitizeString(updates.fullName) || doctor.fullName,
+    hospital: updates.hospital !== undefined ? sanitizeString(updates.hospital) : doctor.hospital,
+    specialty: updates.specialty !== undefined ? sanitizeString(updates.specialty) : doctor.specialty,
+    phone: updates.phone !== undefined ? sanitizeString(updates.phone) : doctor.phone,
+    avatar: updates.avatar !== undefined ? updates.avatar : doctor.avatar,
     id: doctor.id,
     role: updates.role ?? doctor.role,
-    email: (updates.email ?? doctor.email).toLowerCase(),
+    email,
     passwordHash: updates.password ? hashPassword(updates.password) : doctor.passwordHash,
     updatedAt: new Date().toISOString(),
   };
@@ -268,8 +314,8 @@ export async function updateDoctor(doctorId: string, updates: Partial<DoctorReco
   pushEvent(store, {
     doctorId: nextDoctor.id,
     doctorName: nextDoctor.fullName,
-    type: 'account.updated',
-    message: 'Profile details updated',
+    type: updates.password ? 'account.password' : 'account.updated',
+    message: updates.password ? 'Password changed' : 'Profile details updated',
   });
   await writeStore(store);
   return publicDoctor(nextDoctor);
@@ -292,10 +338,30 @@ export async function deleteDoctor(doctorId: string) {
   await writeStore(store);
 }
 
+/** Patient identification required before any report can be stored. */
+export const REQUIRED_PATIENT_FIELDS = ['patientName', 'patientId', 'dateOfBirth'] as const;
+
+const PATIENT_FIELD_LABELS: Record<(typeof REQUIRED_PATIENT_FIELDS)[number], string> = {
+  patientName: 'patient name',
+  patientId: 'patient ID',
+  dateOfBirth: 'date of birth',
+};
+
+export function missingPatientFields(payload: Record<string, unknown>): string[] {
+  return REQUIRED_PATIENT_FIELDS.filter((field) => !sanitizeString(payload[field] as string | undefined)).map(
+    (field) => PATIENT_FIELD_LABELS[field],
+  );
+}
+
 export async function saveDoctorAnalysis(
   doctorId: string,
   payload: Partial<Omit<SavedAnalysis, 'id' | 'doctorId' | 'createdAt' | 'updatedAt'>>,
 ) {
+  const missing = missingPatientFields(payload as Record<string, unknown>);
+  if (missing.length) {
+    throw new Error(`A report cannot be saved without patient information: add the ${missing.join(', ')}.`);
+  }
+
   const store = await readStore();
   const doctor = store.doctors.find((entry) => entry.id === doctorId);
   const now = new Date().toISOString();
@@ -304,9 +370,9 @@ export async function saveDoctorAnalysis(
   const analysis: SavedAnalysis = {
     id: crypto.randomUUID(),
     doctorId,
-    patientName: payload.patientName ?? '',
-    patientId: payload.patientId ?? '',
-    dateOfBirth: payload.dateOfBirth ?? '',
+    patientName: sanitizeString(payload.patientName),
+    patientId: sanitizeString(payload.patientId),
+    dateOfBirth: sanitizeString(payload.dateOfBirth),
     notes: payload.notes ?? '',
     assessment: payload.assessment ?? '',
     confidence: payload.confidence ?? 0,
@@ -315,13 +381,15 @@ export async function saveDoctorAnalysis(
     analysisData: payload.analysisData ?? {},
     cellReviews,
     reviewerObservations: payload.reviewerObservations ?? '',
-    reportStatus: payload.reportStatus ?? 'draft',
+    // A report is never born validated: validation is a decision taken on a
+    // report that already exists in the store.
+    reportStatus: payload.reportStatus === 'validated' ? 'in_review' : payload.reportStatus ?? 'draft',
     priority: payload.priority ?? 'medium',
     qualityScore: payload.qualityScore ?? null,
     cellsDetected: payload.cellsDetected ?? 0,
     cellsReviewed:
       payload.cellsReviewed ?? Object.values(cellReviews).filter((review) => review.decision !== 'pending').length,
-    validatedAt: payload.reportStatus === 'validated' ? now : null,
+    validatedAt: null,
     createdAt: now,
     updatedAt: now,
   };

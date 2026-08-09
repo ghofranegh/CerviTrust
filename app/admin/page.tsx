@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { AlertTriangle, Brain, CheckCircle2, Cpu, FileText, Hourglass, ShieldCheck, Users } from 'lucide-react';
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
+import { AuthGate } from '@/components/auth-gate';
 import { DonutChart, StatTile, TrendChart, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
 import {
@@ -77,7 +77,18 @@ const SERVICE_TONE: Record<string, string> = {
 };
 
 export default function AdminPage() {
-  const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
+  return (
+    <AuthGate
+      adminOnly
+      headline="Sign in to the administration console"
+      message="Platform supervision, service health and audit trail require an administrator account."
+    >
+      {() => <AdminContent />}
+    </AuthGate>
+  );
+}
+
+function AdminContent() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [inference, setInference] = useState<InferenceHealth | null>(null);
   const [bundle, setBundle] = useState<ModelBundle | null>(null);
@@ -93,10 +104,6 @@ export default function AdminPage() {
 
     void (async () => {
       try {
-        const meRes = await fetch('/api/auth/me', { headers: { 'x-doctor-token': token } });
-        const me = await meRes.json();
-        setDoctor(me.doctor ?? null);
-
         const statsRes = await fetch('/api/admin/stats', { headers: { 'x-doctor-token': token } });
         const data = await statsRes.json();
         if (!statsRes.ok) {
@@ -162,13 +169,6 @@ export default function AdminPage() {
 
         {loading ? (
           <p className="text-sm text-foreground/60">Loading platform statistics…</p>
-        ) : !doctor ? (
-          <div className="rounded-xl border border-border bg-white p-8 text-center">
-            <p className="text-foreground/70 mb-4">Sign in with an administrator account to open this dashboard.</p>
-            <Link href="/doctor" className="inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white">
-              Go to sign in
-            </Link>
-          </div>
         ) : error ? (
           <div className="rounded-xl border border-border bg-white p-8">
             <p className="flex items-center gap-2 text-foreground/80">
