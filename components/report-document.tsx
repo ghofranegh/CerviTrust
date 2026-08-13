@@ -22,9 +22,11 @@ import {
   sortClasses,
   toPercent,
 } from '@/lib/analysis-types';
+import { personName } from '@/lib/analysis-types';
 import {
   PatientInfo,
   ageFrom,
+  patientDisplayName,
   pseudonymise,
   reviewedDistribution,
   studyReference,
@@ -98,9 +100,9 @@ export function ReportDocument({
       <section className="pd-section">
         <h2>1. Study identification</h2>
         <div className="pd-grid">
-          <Field label="Patient" value={patient.patientName} />
+          <Field label="Patient" value={patientDisplayName(patient)} />
           <Field label="Patient ID" value={patient.patientId} />
-          <Field label="Pseudonymised record" value={pseudonymise(patient.patientId || patient.patientName)} />
+          <Field label="Pseudonymised record" value={pseudonymise(patient.patientId || patientDisplayName(patient))} />
           <Field label="Date of birth" value={patient.dateOfBirth} />
           <Field label="Age" value={ageFrom(patient.dateOfBirth)} />
           <Field label="Sample / slide ID" value={patient.sampleId} />
@@ -329,7 +331,7 @@ export function ReportDocument({
         <h2>8. Validation</h2>
         <div className="pd-signature">
           <div>
-            <Field label="Reporting practitioner" value={doctor?.fullName ?? '—'} />
+            <Field label="Reporting practitioner" value={doctor ? personName(doctor) : '—'} />
             <Field label="Site" value={doctor?.hospital ?? '—'} />
             <Field label="Specialty" value={doctor?.specialty ?? '—'} />
           </div>

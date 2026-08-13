@@ -20,7 +20,7 @@ import {
   reviewLabel,
   toPercent,
 } from '@/lib/analysis-types';
-import { PatientInfo, ageFrom, pseudonymise, studyReference } from '@/lib/report-utils';
+import { PatientInfo, ageFrom, patientDisplayName, pseudonymise, studyReference } from '@/lib/report-utils';
 
 export function ReportPreview({
   analysis,
@@ -80,7 +80,7 @@ export function ReportPreview({
     const payload = {
       study: studyReference(patient, analysis.analyzedAt),
       generatedAt: generatedAt.toISOString(),
-      patient: { ...patient, patientName: undefined, pseudonym: pseudonymise(patient.patientId || patient.patientName) },
+      patient: { ...patient, pseudonym: pseudonymise(patient.patientId || patientDisplayName(patient)) },
       analysis,
       cellReviews: reviews,
       reviewerObservations: observations,
@@ -169,7 +169,7 @@ export function ReportPreview({
             </div>
             <div>
               <p className="text-foreground/60">Pseudonymised record</p>
-              <p className="font-medium text-foreground">{pseudonymise(patient.patientId || patient.patientName)}</p>
+              <p className="font-medium text-foreground">{pseudonymise(patient.patientId || patientDisplayName(patient))}</p>
             </div>
             <div>
               <p className="text-foreground/60">Sample ID</p>

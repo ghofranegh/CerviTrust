@@ -1,9 +1,10 @@
 import { UserCircle2 } from 'lucide-react';
 import type { DoctorProfile } from '@/lib/analysis-types';
+import { personName } from '@/lib/analysis-types';
 
-export function initialsOf(fullName?: string): string {
+export function initialsOf(name?: string): string {
   return (
-    (fullName ?? '')
+    (name ?? '')
       .split(' ')
       .filter(Boolean)
       .slice(0, 2)
@@ -18,30 +19,31 @@ export function Avatar({
   size = 40,
   className = '',
 }: {
-  doctor?: Pick<DoctorProfile, 'fullName' | 'avatar'> | null;
+  doctor?: Pick<DoctorProfile, 'firstName' | 'lastName' | 'avatar'> | null;
   size?: number;
   className?: string;
 }) {
   const dimension = { width: size, height: size };
+  const name = doctor ? personName(doctor, '') : '';
 
   if (doctor?.avatar) {
     return (
       <img
         src={doctor.avatar}
-        alt={doctor.fullName ? `${doctor.fullName}'s profile picture` : 'Profile picture'}
+        alt={name ? `${name}'s profile picture` : 'Profile picture'}
         style={dimension}
         className={`rounded-full object-cover border border-border bg-white ${className}`}
       />
     );
   }
 
-  if (doctor?.fullName) {
+  if (name) {
     return (
       <span
         style={{ ...dimension, fontSize: Math.max(11, size * 0.36) }}
         className={`flex items-center justify-center rounded-full bg-primary font-semibold text-white ${className}`}
       >
-        {initialsOf(doctor.fullName)}
+        {initialsOf(name)}
       </span>
     );
   }

@@ -482,6 +482,13 @@ def predict(image: Image.Image) -> dict:
 
     # --- Per-nucleus classification (regions of interest) ---
     patch_size = CFG.get("patch_size", IMAGE_SIZE)
+    # The classification crop above stays IMAGE_SIZE (64px) so predictions are
+    # unaffected by this change. The *displayed* crop is taken separately, at a
+    # larger native size and then upscaled with cubic interpolation, so the
+    # "Targeted review" / segmentation thumbnails are an actual sharp zoom
+    # instead of a blurry blow-up of a 64x64 PNG.
+    display_patch_size = CFG.get("cell_patch_size", 160)
+    display_size = CFG.get("cell_display_size", 256)
     regions_of_interest = []
     class_distribution = {name: 0 for name in CLASS_NAMES}
     # Largest nuclei first: they carry the most information for triage.
@@ -489,6 +496,8 @@ def predict(image: Image.Image) -> dict:
 
     for nucleus in ordered_nuclei[:MAX_REGIONS]:
         crop = crop_nucleus(image_rgb, nucleus["centroid"], patch_size)
+        display_crop = crop_nucleus(image_rgb, nucleus["centroid"], display_patch_size)
+        display_crop = cv2.resize(display_crop, (display_size, display_size), interpolation=cv2.INTER_CUBIC)
         crop_result = _classify(crop)
         crop_mu, crop_sigma = crop_result["mu"], crop_result["sigma"]
         crop_idx = int(crop_mu.argmax())
@@ -522,7 +531,7 @@ def predict(image: Image.Image) -> dict:
                                         if nucleus.get("type_prob") is not None else None),
             "morphometrics": metrics,
             "anomalies": anomalies,
-            "image": _array_to_base64(crop),
+            "image": _array_to_base64(display_crop),
         })
 
     areas = [float(cv2.contourArea(n["contour"])) for n in nuclei]

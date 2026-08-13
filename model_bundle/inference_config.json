@@ -6,6 +6,8 @@
     "SCC"
   ],
   "image_size": 64,
+  "cell_patch_size": 160,
+  "cell_display_size": 256,
   "gradcam_target_layer": "blocks.2",
   "laplace": {
     "subset_of_weights": "last_layer",

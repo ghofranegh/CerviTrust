@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, ZoomIn } from 'lucide-react';
 import { MeterBar } from '@/components/charts';
+import { CellZoomModal } from '@/components/cell-zoom-modal';
 import {
   Anomaly,
   RegionOfInterest,
@@ -107,6 +108,7 @@ export function SegmentationViewer({
   const [showContours, setShowContours] = useState(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [opacity, setOpacity] = useState(0.55);
+  const [zoomRoi, setZoomRoi] = useState<RegionOfInterest | null>(null);
 
   const nucleusUrl = useTintedMask(segmentation?.nucleus, NUCLEUS_COLOR);
   const cytoplasmUrl = useTintedMask(segmentation?.cytoplasm, CYTOPLASM_COLOR);
@@ -218,7 +220,11 @@ export function SegmentationViewer({
                 <button
                   key={roi.id}
                   type="button"
-                  onClick={() => onSelect(roi.id)}
+                  onClick={() => {
+                    onSelect(roi.id);
+                    setZoomRoi(roi);
+                  }}
+                  title="Select and zoom in on this instance"
                   className={`flex-shrink-0 rounded-lg border p-1.5 transition-all ${
                     roi.id === selected?.id ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'
                   }`}
@@ -256,7 +262,14 @@ export function SegmentationViewer({
         ) : (
           <>
             <div className="flex items-center gap-3">
-              <img src={`data:image/png;base64,${selected.image}`} alt={`Instance ${selected.id}`} className="h-16 w-16 rounded-lg border border-border object-cover" />
+              <button type="button" onClick={() => setZoomRoi(selected)} title="Zoom in on this instance" className="flex-shrink-0">
+                <span className="relative block">
+                  <img src={`data:image/png;base64,${selected.image}`} alt={`Instance ${selected.id}`} className="h-16 w-16 rounded-lg border border-border object-cover" />
+                  <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-white text-foreground/70">
+                    <ZoomIn size={11} />
+                  </span>
+                </span>
+              </button>
               <div>
                 <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(selected.predicted_class).tone]}`}>
                   {classMeta(selected.predicted_class).label}
@@ -345,6 +358,8 @@ export function SegmentationViewer({
           clinical context. Cytoplasm boundaries are estimated from a dilation ring around each nucleus.
         </p>
       </div>
+
+      {zoomRoi ? <CellZoomModal roi={zoomRoi} onClose={() => setZoomRoi(null)} /> : null}
     </div>
   );
 }

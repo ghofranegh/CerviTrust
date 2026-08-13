@@ -53,20 +53,26 @@ export default function DoctorPage() {
           <h3 className="text-lg font-semibold text-foreground mb-1">Your workspace</h3>
           <p className="text-sm text-foreground/60 mb-4">Jump straight to the tools you use most.</p>
           <div className="flex flex-wrap gap-3">
-            <Link href="/dashboard" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90">
-              Open dashboard
-            </Link>
-            <Link href="/analysis" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-              New analysis
-            </Link>
-            <Link href="/saved-reports" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-              Saved reports
-            </Link>
             {doctor.role === 'admin' ? (
-              <Link href="/admin" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-                Administration
+              <Link href="/admin" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90">
+                Administration console
               </Link>
-            ) : null}
+            ) : (
+              <>
+                <Link href="/dashboard" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90">
+                  Open dashboard
+                </Link>
+                <Link href="/" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
+                  Patients
+                </Link>
+                <Link href="/analysis" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
+                  New analysis
+                </Link>
+                <Link href="/saved-reports" className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
+                  Saved reports
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </section>

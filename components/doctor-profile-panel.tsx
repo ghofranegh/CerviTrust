@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Camera, Check, KeyRound, Loader2, LogOut, Pencil, Trash2, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { getStoredDoctorToken } from '@/lib/client-auth';
-import type { DoctorProfile } from '@/lib/analysis-types';
+import { personName, type DoctorProfile } from '@/lib/analysis-types';
 
 const FIELD =
   'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
@@ -95,7 +95,8 @@ export function DoctorProfilePanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
-    fullName: doctor.fullName,
+    firstName: doctor.firstName,
+    lastName: doctor.lastName,
     email: doctor.email,
     hospital: doctor.hospital,
     specialty: doctor.specialty,
@@ -106,7 +107,8 @@ export function DoctorProfilePanel({
   useEffect(() => {
     setProfile(doctor);
     setForm({
-      fullName: doctor.fullName,
+      firstName: doctor.firstName,
+      lastName: doctor.lastName,
       email: doctor.email,
       hospital: doctor.hospital,
       specialty: doctor.specialty,
@@ -247,7 +249,7 @@ export function DoctorProfilePanel({
               </div>
 
               <div className="pb-1">
-                <h2 className="text-2xl font-semibold text-foreground">{profile.fullName}</h2>
+                <h2 className="text-2xl font-semibold text-foreground">{personName(profile)}</h2>
                 <p className="text-sm text-foreground/60">
                   {profile.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
                   {profile.hospital ? ` · ${profile.hospital}` : ''}
@@ -340,12 +342,34 @@ export function DoctorProfilePanel({
       {editing ? (
         <Modal title="Edit profile" onClose={() => setEditing(false)}>
           <form onSubmit={saveDetails} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-foreground">First name</span>
+                <input
+                  className={FIELD}
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={form.firstName}
+                  onChange={(event) => setForm({ ...form, firstName: event.target.value })}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-foreground">Last name</span>
+                <input
+                  className={FIELD}
+                  type="text"
+                  required
+                  maxLength={100}
+                  value={form.lastName}
+                  onChange={(event) => setForm({ ...form, lastName: event.target.value })}
+                />
+              </label>
+            </div>
             {[
-              { key: 'fullName' as const, label: 'Full name', type: 'text', required: true },
               { key: 'email' as const, label: 'Email', type: 'email', required: true },
               { key: 'hospital' as const, label: 'Hospital or laboratory', type: 'text', required: false },
               { key: 'specialty' as const, label: 'Specialty', type: 'text', required: false },
-              { key: 'phone' as const, label: 'Phone', type: 'tel', required: false },
             ].map((field) => (
               <label key={field.key} className="block">
                 <span className="mb-1 block text-sm font-medium text-foreground">{field.label}</span>
@@ -358,6 +382,20 @@ export function DoctorProfilePanel({
                 />
               </label>
             ))}
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-foreground">Phone</span>
+              <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
+                <input
+                  className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground focus:outline-none"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={8}
+                  value={form.phone}
+                  onChange={(event) => setForm({ ...form, phone: event.target.value.replace(/\D/g, '').slice(0, 8) })}
+                />
+              </div>
+            </label>
 
             <div className="flex justify-end gap-2 border-t border-border pt-4">
               <button type="button" onClick={() => setEditing(false)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">

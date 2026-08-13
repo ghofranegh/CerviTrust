@@ -1,7 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Brain, CheckCircle2, Cpu, FileText, Hourglass, ShieldCheck, Users } from 'lucide-react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  Brain,
+  CheckCircle2,
+  Cpu,
+  FileText,
+  Hourglass,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  Users,
+  X,
+} from 'lucide-react';
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
 import { AuthGate } from '@/components/auth-gate';
@@ -11,11 +23,26 @@ import {
   DoctorProfile,
   TONE_BADGE,
   classMeta,
+  personName,
   reportStatusLabel,
   reportStatusTone,
   priorityLabel,
   priorityTone,
 } from '@/lib/analysis-types';
+
+interface ReportRow {
+  id: string;
+  patientFirstName: string;
+  patientLastName: string;
+  patientId: string;
+  assessment: string;
+  confidence: number;
+  priority: string;
+  reportStatus: 'draft' | 'in_review' | 'validated';
+  qualityScore: number | null;
+  createdAt: string;
+  doctorName: string;
+}
 
 interface AdminStats {
   totals: {
@@ -34,19 +61,23 @@ interface AdminStats {
   activity: Array<{ day: string; reports: number; validated: number; flagged: number }>;
   doctors: Array<DoctorProfile & { reportCount: number; lastActivity: string }>;
   events: Array<{ id: string; doctorName: string; type: string; message: string; createdAt: string }>;
-  recentReports: Array<{
-    id: string;
-    patientName: string;
-    patientId: string;
-    assessment: string;
-    confidence: number;
-    priority: string;
-    reportStatus: 'draft' | 'in_review' | 'validated';
-    qualityScore: number | null;
-    createdAt: string;
-    doctorName: string;
-  }>;
+  recentReports: ReportRow[];
+  awaitingValidation: ReportRow[];
 }
+
+const FIELD =
+  'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+
+const EMPTY_ACCOUNT_FORM = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
+  hospital: '',
+  specialty: '',
+  phone: '',
+  role: 'doctor' as 'doctor' | 'admin',
+};
 
 interface InferenceHealth {
   endpoint: string;
@@ -83,43 +114,122 @@ export default function AdminPage() {
       headline="Sign in to the administration console"
       message="Platform supervision, service health and audit trail require an administrator account."
     >
-      {() => <AdminContent />}
+      {(doctor) => <AdminContent selfId={doctor.id} />}
     </AuthGate>
   );
 }
 
-function AdminContent() {
+function AdminContent({ selfId }: { selfId: string }) {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [inference, setInference] = useState<InferenceHealth | null>(null);
   const [bundle, setBundle] = useState<ModelBundle | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [accountForm, setAccountForm] = useState(EMPTY_ACCOUNT_FORM);
+  const [accountError, setAccountError] = useState('');
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
+  const [busyReportId, setBusyReportId] = useState<string | null>(null);
 
-  useEffect(() => {
+  async function loadStats() {
     const token = getStoredDoctorToken();
     if (!token) {
       setLoading(false);
       return;
     }
-
-    void (async () => {
-      try {
-        const statsRes = await fetch('/api/admin/stats', { headers: { 'x-doctor-token': token } });
-        const data = await statsRes.json();
-        if (!statsRes.ok) {
-          setError(data.error ?? 'Unable to load platform statistics.');
-          return;
-        }
-        setStats(data.stats);
-        setInference(data.inference);
-        setBundle(data.bundle);
-      } catch {
-        setError('Unable to load platform statistics.');
-      } finally {
-        setLoading(false);
+    try {
+      const statsRes = await fetch('/api/admin/stats', { headers: { 'x-doctor-token': token } });
+      const data = await statsRes.json();
+      if (!statsRes.ok) {
+        setError(data.error ?? 'Unable to load platform statistics.');
+        return;
       }
-    })();
+      setStats(data.stats);
+      setInference(data.inference);
+      setBundle(data.bundle);
+    } catch {
+      setError('Unable to load platform statistics.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadStats();
   }, []);
+
+  async function handleCreateAccount(event: FormEvent) {
+    event.preventDefault();
+    setAccountError('');
+    setAccountSaving(true);
+    try {
+      const token = getStoredDoctorToken();
+      const res = await fetch('/api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-doctor-token': token ?? '' },
+        body: JSON.stringify(accountForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to create account');
+      setAccountForm(EMPTY_ACCOUNT_FORM);
+      setCreating(false);
+      await loadStats();
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : 'Unable to create account');
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+
+  async function handleSetStatus(id: string, status: 'active' | 'inactive') {
+    setBusyAccountId(id);
+    try {
+      const token = getStoredDoctorToken();
+      await fetch(`/api/admin/accounts/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-doctor-token': token ?? '' },
+        body: JSON.stringify({ status }),
+      });
+      await loadStats();
+    } finally {
+      setBusyAccountId(null);
+    }
+  }
+
+  async function handleDeleteAccount(id: string) {
+    if (!window.confirm('Delete this account? This also removes its saved reports and patients.')) return;
+    setBusyAccountId(id);
+    try {
+      const token = getStoredDoctorToken();
+      const res = await fetch(`/api/admin/accounts/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-doctor-token': token ?? '' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to delete account');
+      await loadStats();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Unable to delete account');
+    } finally {
+      setBusyAccountId(null);
+    }
+  }
+
+  async function handleValidateReport(id: string) {
+    setBusyReportId(id);
+    try {
+      const token = getStoredDoctorToken();
+      await fetch(`/api/analyses/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-doctor-token': token ?? '' },
+        body: JSON.stringify({ reportStatus: 'validated' }),
+      });
+      await loadStats();
+    } finally {
+      setBusyReportId(null);
+    }
+  }
 
   const days = useMemo(() => recentDays(DAYS), []);
 
@@ -162,9 +272,18 @@ function AdminContent() {
             <h1 className="text-4xl font-semibold text-foreground mb-2">Administrator dashboard</h1>
             <p className="text-foreground/60">Platform usage, service health and deployed model bundle.</p>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/80">
-            <ShieldCheck size={16} className="text-primary" /> Administrator
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/80">
+              <ShieldCheck size={16} className="text-primary" /> Administrator
+            </span>
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+            >
+              <Plus size={16} /> Create account
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -174,10 +293,7 @@ function AdminContent() {
             <p className="flex items-center gap-2 text-foreground/80">
               <AlertTriangle size={18} className="text-status-warning" /> {error}
             </p>
-            <p className="mt-2 text-sm text-foreground/60">
-              This dashboard is restricted to administrator accounts. Create one from the sign-up form by selecting the
-              administrator role.
-            </p>
+            <p className="mt-2 text-sm text-foreground/60">This dashboard is restricted to administrator accounts.</p>
           </div>
         ) : stats ? (
           <div className="space-y-8">
@@ -297,34 +413,73 @@ function AdminContent() {
               <div className="rounded-lg border border-border bg-white p-6">
                 <h2 className="text-lg font-semibold text-foreground mb-4">Accounts ({stats.doctors.length})</h2>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[460px] text-sm">
+                  <table className="w-full min-w-[560px] text-sm">
                     <thead>
                       <tr className="border-b border-border text-left">
                         <th className="py-2 pr-4 font-semibold text-foreground/70">Name</th>
-                        <th className="py-2 pr-4 font-semibold text-foreground/70">Site</th>
                         <th className="py-2 pr-4 font-semibold text-foreground/70">Role</th>
-                        <th className="py-2 font-semibold text-foreground/70">Reports</th>
+                        <th className="py-2 pr-4 font-semibold text-foreground/70">Status</th>
+                        <th className="py-2 pr-4 font-semibold text-foreground/70">Reports</th>
+                        <th className="py-2 font-semibold text-foreground/70">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {stats.doctors.map((entry) => (
-                        <tr key={entry.id} className="border-b border-border last:border-0">
-                          <td className="py-2 pr-4">
-                            <p className="font-medium text-foreground">{entry.fullName}</p>
-                            <p className="text-xs text-foreground/60">{entry.email}</p>
-                          </td>
-                          <td className="py-2 pr-4 text-foreground/70">{entry.hospital || '—'}</td>
-                          <td className="py-2 pr-4">
-                            <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground/70">
-                              {entry.role === 'admin' ? 'Administrator' : 'Practitioner'}
-                            </span>
-                          </td>
-                          <td className="py-2 tabular-nums text-foreground/80">{entry.reportCount}</td>
-                        </tr>
-                      ))}
+                      {stats.doctors.map((entry) => {
+                        const isSelf = entry.id === selfId;
+                        const canDelete = entry.role === 'doctor' || isSelf;
+                        return (
+                          <tr key={entry.id} className="border-b border-border last:border-0">
+                            <td className="py-2 pr-4">
+                              <p className="font-medium text-foreground">
+                                {personName(entry)}
+                                {isSelf ? <span className="ml-1 text-xs text-foreground/50">(you)</span> : null}
+                              </p>
+                              <p className="text-xs text-foreground/60">{entry.email}</p>
+                            </td>
+                            <td className="py-2 pr-4">
+                              <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground/70">
+                                {entry.role === 'admin' ? 'Administrator' : 'Practitioner'}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-4">
+                              <span
+                                className={`rounded-md border px-2 py-0.5 text-xs font-medium ${
+                                  entry.status === 'inactive'
+                                    ? 'border-status-critical/30 bg-status-critical/10 text-status-critical'
+                                    : 'border-status-success/30 bg-status-success/10 text-status-success'
+                                }`}
+                              >
+                                {entry.status === 'inactive' ? 'Deactivated' : 'Active'}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-4 tabular-nums text-foreground/80">{entry.reportCount}</td>
+                            <td className="py-2">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  disabled={busyAccountId === entry.id}
+                                  onClick={() => handleSetStatus(entry.id, entry.status === 'inactive' ? 'active' : 'inactive')}
+                                  className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground/80 hover:bg-secondary disabled:opacity-50"
+                                >
+                                  {entry.status === 'inactive' ? 'Activate' : 'Deactivate'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busyAccountId === entry.id || !canDelete}
+                                  title={!canDelete ? "An administrator can't delete another administrator's account" : undefined}
+                                  onClick={() => handleDeleteAccount(entry.id)}
+                                  className="rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {!stats.doctors.length ? (
                         <tr>
-                          <td colSpan={4} className="py-3 text-foreground/60">
+                          <td colSpan={5} className="py-3 text-foreground/60">
                             No account registered yet.
                           </td>
                         </tr>
@@ -356,6 +511,61 @@ function AdminContent() {
               </div>
             </div>
 
+            {/* Reports awaiting validation */}
+            <div className="rounded-lg border border-border bg-white p-6">
+              <h2 className="text-lg font-semibold text-foreground mb-1">Reports awaiting validation ({stats.awaitingValidation.length})</h2>
+              <p className="text-sm text-foreground/60 mb-4">
+                Reports a practitioner marked "In review". Validating notifies them by email.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left">
+                      <th className="py-2 pr-4 font-semibold text-foreground/70">Patient</th>
+                      <th className="py-2 pr-4 font-semibold text-foreground/70">Practitioner</th>
+                      <th className="py-2 pr-4 font-semibold text-foreground/70">Assessment</th>
+                      <th className="py-2 pr-4 font-semibold text-foreground/70">Saved</th>
+                      <th className="py-2 font-semibold text-foreground/70">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.awaitingValidation.map((report) => (
+                      <tr key={report.id} className="border-b border-border last:border-0">
+                        <td className="py-2 pr-4">
+                          <p className="font-medium text-foreground">{personName({ firstName: report.patientFirstName, lastName: report.patientLastName }, 'Unnamed patient')}</p>
+                          <p className="text-xs text-foreground/60">{report.patientId || '—'}</p>
+                        </td>
+                        <td className="py-2 pr-4 text-foreground/70">{report.doctorName}</td>
+                        <td className="py-2 pr-4">
+                          <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(report.assessment).tone]}`}>
+                            {classMeta(report.assessment).label}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-4 text-foreground/70">{new Date(report.createdAt).toLocaleDateString()}</td>
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            disabled={busyReportId === report.id}
+                            onClick={() => handleValidateReport(report.id)}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-status-success px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                          >
+                            {busyReportId === report.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Validate
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!stats.awaitingValidation.length ? (
+                      <tr>
+                        <td colSpan={5} className="py-3 text-foreground/60">
+                          Nothing awaiting validation.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Recent reports */}
             <div className="rounded-lg border border-border bg-white p-6">
               <h2 className="text-lg font-semibold text-foreground mb-4">Recent reports</h2>
@@ -377,7 +587,7 @@ function AdminContent() {
                     {stats.recentReports.map((report) => (
                       <tr key={report.id} className="border-b border-border last:border-0">
                         <td className="py-2 pr-4">
-                          <p className="font-medium text-foreground">{report.patientName || 'Unnamed patient'}</p>
+                          <p className="font-medium text-foreground">{personName({ firstName: report.patientFirstName, lastName: report.patientLastName }, 'Unnamed patient')}</p>
                           <p className="text-xs text-foreground/60">{report.patientId || '—'}</p>
                         </td>
                         <td className="py-2 pr-4 text-foreground/70">{report.doctorName}</td>
@@ -415,6 +625,73 @@ function AdminContent() {
           </div>
         ) : null}
       </section>
+
+      {creating ? (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setCreating(false)}>
+          <div className="my-8 w-full max-w-lg rounded-xl border border-border bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-border px-6 py-4">
+              <h3 className="text-lg font-semibold text-foreground">Create account</h3>
+              <button type="button" onClick={() => setCreating(false)} className="rounded-md p-1 text-foreground/60 hover:bg-secondary hover:text-foreground" aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateAccount} className="space-y-4 px-6 py-5">
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: 'doctor', label: 'Doctor / Biologist' },
+                    { value: 'admin', label: 'Administrator' },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setAccountForm({ ...accountForm, role: option.value })}
+                    className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                      accountForm.role === option.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input className={FIELD} placeholder="First name" maxLength={100} value={accountForm.firstName} onChange={(event) => setAccountForm({ ...accountForm, firstName: event.target.value })} required />
+                <input className={FIELD} placeholder="Last name" maxLength={100} value={accountForm.lastName} onChange={(event) => setAccountForm({ ...accountForm, lastName: event.target.value })} required />
+              </div>
+              <input className={FIELD} type="email" placeholder="Email address" maxLength={320} value={accountForm.email} onChange={(event) => setAccountForm({ ...accountForm, email: event.target.value })} required />
+              <input className={FIELD} type="password" placeholder="Temporary password" minLength={8} value={accountForm.password} onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })} required />
+              <input className={FIELD} placeholder="Hospital or laboratory" value={accountForm.hospital} onChange={(event) => setAccountForm({ ...accountForm, hospital: event.target.value })} />
+              <div className="grid grid-cols-2 gap-3">
+                <input className={FIELD} placeholder="Specialty" value={accountForm.specialty} onChange={(event) => setAccountForm({ ...accountForm, specialty: event.target.value })} />
+                <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                  <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
+                  <input
+                    className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground focus:outline-none"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="Phone"
+                    value={accountForm.phone}
+                    onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value.replace(/\D/g, '').slice(0, 8) })}
+                  />
+                </div>
+              </div>
+
+              {accountError ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{accountError}</p> : null}
+
+              <div className="flex justify-end gap-2 border-t border-border pt-4">
+                <button type="button" onClick={() => setCreating(false)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={accountSaving} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-60">
+                  {accountSaving ? <Loader2 size={15} className="animate-spin" /> : null} Create account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       <Footer />
     </main>

@@ -1,35 +1,60 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import Link from 'next/link';
+import { FormEvent, useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import type { DoctorProfile } from '@/lib/analysis-types';
 
 const FIELD =
   'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 
+/** Grey, non-editable "+216" prefix next to an 8-digit-only phone input. */
+function PhoneField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+      <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
+      <input
+        className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:outline-none"
+        placeholder="Phone (optional)"
+        type="tel"
+        inputMode="numeric"
+        maxLength={8}
+        value={value}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, 8))}
+      />
+    </div>
+  );
+}
+
 export function DoctorAuthPanel({
   onAuthenticated,
-  initialMode = 'signin',
   compact = false,
 }: {
   onAuthenticated?: (doctor: DoctorProfile, token: string) => void;
-  initialMode?: 'signin' | 'signup';
   compact?: boolean;
 }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const [checkingSetup, setCheckingSetup] = useState(true);
+  const [needsBootstrap, setNeedsBootstrap] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
-    fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     hospital: '',
     specialty: '',
     phone: '',
-    role: 'doctor' as 'doctor' | 'admin',
-    adminCode: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    void fetch('/api/auth/bootstrap-status')
+      .then((res) => res.json())
+      .then((data) => setNeedsBootstrap(Boolean(data.needsBootstrap)))
+      .catch(() => setNeedsBootstrap(false))
+      .finally(() => setCheckingSetup(false));
+  }, []);
 
   const update = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -39,15 +64,15 @@ export function DoctorAuthPanel({
     setError('');
 
     try {
-      if (mode === 'signup' && form.password.length < 8) {
+      if (needsBootstrap && form.password.length < 8) {
         throw new Error('Choose a password of at least 8 characters.');
       }
 
-      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const endpoint = needsBootstrap ? '/api/auth/signup' : '/api/auth/login';
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'signup' ? form : { email: form.email, password: form.password }),
+        body: JSON.stringify(needsBootstrap ? form : { email: form.email, password: form.password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Authentication failed');
@@ -59,55 +84,50 @@ export function DoctorAuthPanel({
     }
   }
 
+  if (checkingSetup) {
+    return (
+      <div className={`flex items-center justify-center rounded-xl border border-border bg-white shadow-sm ${compact ? 'p-6' : 'p-6 md:p-8'}`}>
+        <Loader2 size={18} className="animate-spin text-foreground/50" />
+      </div>
+    );
+  }
+
   return (
     <div className={`rounded-xl border border-border bg-white shadow-sm ${compact ? 'p-6' : 'p-6 md:p-8'}`}>
       <div className="mb-5">
-        <h2 className="text-2xl font-semibold text-foreground">{mode === 'signin' ? 'Sign in' : 'Create your account'}</h2>
+        <h2 className="text-2xl font-semibold text-foreground">{needsBootstrap ? 'Set up your platform' : 'Sign in'}</h2>
         <p className="mt-1 text-sm text-foreground/60">
-          {mode === 'signin'
-            ? 'Access your screening workspace, reports and dashboard.'
-            : 'A few details about you and your site, and you are ready to analyse.'}
+          {needsBootstrap
+            ? 'No account exists yet — create the first administrator account to get started.'
+            : 'Access your screening workspace, reports and dashboard.'}
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        {mode === 'signup' && (
+        {needsBootstrap && (
           <>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  { value: 'doctor', label: 'Doctor / Biologist', hint: 'Analyse smears, write reports' },
-                  { value: 'admin', label: 'Administrator', hint: 'Supervision and audit' },
-                ] as const
-              ).map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => update({ role: option.value })}
-                  className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                    form.role === option.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
-                  }`}
-                >
-                  <span className="block text-sm font-medium text-foreground">{option.label}</span>
-                  <span className="block text-xs text-foreground/60">{option.hint}</span>
-                </button>
-              ))}
-            </div>
-
-            {form.role === 'admin' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
               <input
                 className={FIELD}
-                placeholder="Administrator access code (if required)"
-                value={form.adminCode}
-                onChange={(event) => update({ adminCode: event.target.value })}
+                placeholder="First name"
+                value={form.firstName}
+                onChange={(event) => update({ firstName: event.target.value })}
+                maxLength={100}
+                required
               />
-            ) : null}
-
-            <input className={FIELD} placeholder="Full name" value={form.fullName} onChange={(event) => update({ fullName: event.target.value })} required />
+              <input
+                className={FIELD}
+                placeholder="Last name"
+                value={form.lastName}
+                onChange={(event) => update({ lastName: event.target.value })}
+                maxLength={100}
+                required
+              />
+            </div>
             <input className={FIELD} placeholder="Hospital or laboratory" value={form.hospital} onChange={(event) => update({ hospital: event.target.value })} required />
             <div className="grid gap-3 sm:grid-cols-2">
               <input className={FIELD} placeholder="Specialty" value={form.specialty} onChange={(event) => update({ specialty: event.target.value })} />
-              <input className={FIELD} placeholder="Phone" value={form.phone} onChange={(event) => update({ phone: event.target.value })} />
+              <PhoneField value={form.phone} onChange={(value) => update({ phone: value })} />
             </div>
           </>
         )}
@@ -119,6 +139,7 @@ export function DoctorAuthPanel({
           autoComplete="email"
           value={form.email}
           onChange={(event) => update({ email: event.target.value })}
+          maxLength={320}
           required
         />
 
@@ -127,7 +148,7 @@ export function DoctorAuthPanel({
             className={`${FIELD} pr-11`}
             placeholder="Password"
             type={showPassword ? 'text' : 'password'}
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            autoComplete={needsBootstrap ? 'new-password' : 'current-password'}
             value={form.password}
             onChange={(event) => update({ password: event.target.value })}
             required
@@ -142,6 +163,14 @@ export function DoctorAuthPanel({
           </button>
         </div>
 
+        {!needsBootstrap ? (
+          <div className="text-right">
+            <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+        ) : null}
+
         {error ? (
           <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
             {error}
@@ -154,38 +183,15 @@ export function DoctorAuthPanel({
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-          {loading ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+          {loading ? 'Please wait…' : needsBootstrap ? 'Create administrator account' : 'Sign in'}
         </button>
       </form>
 
-      <div className="mt-5 border-t border-border pt-5 text-center">
-        {mode === 'signin' ? (
-          <button
-            type="button"
-            onClick={() => {
-              setMode('signup');
-              setError('');
-            }}
-            className="rounded-lg bg-status-success/10 px-5 py-2.5 text-sm font-semibold text-status-success transition-colors hover:bg-status-success/15"
-          >
-            Create new account
-          </button>
-        ) : (
-          <p className="text-sm text-foreground/70">
-            Already registered?{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setMode('signin');
-                setError('');
-              }}
-              className="font-semibold text-primary hover:underline"
-            >
-              Sign in instead
-            </button>
-          </p>
-        )}
-      </div>
+      {!needsBootstrap ? (
+        <p className="mt-5 border-t border-border pt-5 text-center text-sm text-foreground/60">
+          Accounts are created by an administrator — contact yours if you don&apos;t have one yet.
+        </p>
+      ) : null}
     </div>
   );
 }

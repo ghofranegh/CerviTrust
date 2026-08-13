@@ -154,16 +154,24 @@ export interface Analysis {
 
 export interface DoctorProfile {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   hospital: string;
   specialty: string;
   phone: string;
   role: 'doctor' | 'admin';
+  status: 'active' | 'inactive';
   /** Profile picture as a data URL; empty when none has been uploaded. */
   avatar: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Display name for any first/last-name pair — doctors and patients alike. */
+export function personName(person: { firstName?: string; lastName?: string } | null | undefined, fallback = 'Unnamed'): string {
+  if (!person) return fallback;
+  return `${person.firstName ?? ''} ${person.lastName ?? ''}`.trim() || fallback;
 }
 
 /* ------------------------------------------------------------------ */

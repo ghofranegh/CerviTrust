@@ -7,6 +7,7 @@ import { LayoutDashboard, LogOut, Menu, Settings, X } from 'lucide-react';
 import Image from 'next/image';
 import { Avatar } from '@/components/avatar';
 import { useDoctorSession } from '@/lib/use-doctor-session';
+import { personName } from '@/lib/analysis-types';
 
 export function Navigation() {
   const pathname = usePathname();
@@ -17,15 +18,20 @@ export function Navigation() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const links = doctor
-    ? [
-        { href: '/', label: 'Home' },
-        { href: '/analysis', label: 'Analysis' },
-        { href: '/dashboard', label: 'Dashboard' },
-        { href: '/saved-reports', label: 'Saved Reports' },
-        ...(doctor.role === 'admin' ? [{ href: '/admin', label: 'Administration' }] : []),
-        { href: '/system', label: 'System Overview' },
-        { href: '/about', label: 'About' },
-      ]
+    ? doctor.role === 'admin'
+      ? [
+          { href: '/admin', label: 'Administration' },
+          { href: '/system', label: 'System Overview' },
+          { href: '/about', label: 'About' },
+        ]
+      : [
+          { href: '/', label: 'Patients' },
+          { href: '/analysis', label: 'Analysis' },
+          { href: '/dashboard', label: 'Dashboard' },
+          { href: '/saved-reports', label: 'Saved Reports' },
+          { href: '/system', label: 'System Overview' },
+          { href: '/about', label: 'About' },
+        ]
     : [
         { href: '/system', label: 'System Overview' },
         { href: '/about', label: 'About' },
@@ -79,7 +85,7 @@ export function Navigation() {
                   aria-expanded={menuOpen}
                 >
                   <Avatar doctor={doctor} size={32} />
-                  <span className="max-w-[9rem] truncate">{doctor.fullName}</span>
+                  <span className="max-w-[9rem] truncate">{personName(doctor)}</span>
                 </button>
 
                 {menuOpen ? (
@@ -87,15 +93,17 @@ export function Navigation() {
                     <div className="flex items-center gap-3 border-b border-border px-4 py-3">
                       <Avatar doctor={doctor} size={40} />
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{doctor.fullName}</p>
+                        <p className="truncate font-medium text-foreground">{personName(doctor)}</p>
                         <p className="truncate text-xs text-foreground/60">
                           {doctor.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
                         </p>
                       </div>
                     </div>
-                    <Link href="/dashboard" className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary" role="menuitem">
-                      <LayoutDashboard size={16} /> Dashboard
-                    </Link>
+                    {doctor.role === 'doctor' ? (
+                      <Link href="/dashboard" className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary" role="menuitem">
+                        <LayoutDashboard size={16} /> Dashboard
+                      </Link>
+                    ) : null}
                     <Link href="/doctor" className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary" role="menuitem">
                       <Settings size={16} /> Account settings
                     </Link>
@@ -140,7 +148,7 @@ export function Navigation() {
                 <Link href="/doctor" className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-sm font-medium" onClick={() => setIsOpen(false)}>
                   <Avatar doctor={doctor} size={32} />
                   <span className="min-w-0">
-                    <span className="block truncate">{doctor.fullName}</span>
+                    <span className="block truncate">{personName(doctor)}</span>
                     <span className="block text-xs text-foreground/60">
                       {doctor.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
                     </span>

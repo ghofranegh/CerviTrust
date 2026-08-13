@@ -1,16 +1,23 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Loader2, Pencil, Trash2 } from 'lucide-react';
 import { getStoredDoctorToken } from '@/lib/client-auth';
+import { CellZoomModal } from '@/components/cell-zoom-modal';
+import { PatientOverviewModal } from '@/components/patient-overview-modal';
 import { DonutChart, MeterBar, classColor } from '@/components/charts';
 import {
   Analysis,
   CellReviewMap,
   ReportStatus,
+  RegionOfInterest,
   TONE_BADGE,
   classMeta,
   effectiveClass,
   formatNumber,
+  personName,
   priorityLabel,
   priorityTone,
   qualityLabel,
@@ -24,7 +31,9 @@ import {
 
 interface SavedReport {
   id: string;
-  patientName: string;
+  patientRecordId: string;
+  patientFirstName: string;
+  patientLastName: string;
   patientId: string;
   dateOfBirth: string;
   notes: string;
@@ -43,43 +52,52 @@ interface SavedReport {
   createdAt: string;
 }
 
+function reportPatientName(entry: { patientFirstName: string; patientLastName: string }): string {
+  return personName({ firstName: entry.patientFirstName, lastName: entry.patientLastName }, 'Unnamed patient');
+}
+
 type SortBy = 'date' | 'name' | 'id';
 
 type GroupedReports = Array<{
   patientId: string;
-  patientName: string;
+  patientFirstName: string;
+  patientLastName: string;
   reports: SavedReport[];
 }>;
 
 export function SavedAnalysesList() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortBy>('date');
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState(searchParams.get('patientId') ?? '');
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
-  const [expandedPatient, setExpandedPatient] = useState<string | null>(null);
+  const [expandedPatient, setExpandedPatient] = useState<string | null>(searchParams.get('patientId'));
   const [modalReport, setModalReport] = useState<SavedReport | null>(null);
+  const [overviewGroup, setOverviewGroup] = useState<GroupedReports[number] | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [zoomRoi, setZoomRoi] = useState<RegionOfInterest | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  async function loadReports() {
     const token = getStoredDoctorToken();
     if (!token) {
       setLoading(false);
       return;
     }
-
-    async function loadReports() {
-      try {
-        const res = await fetch('/api/analyses', { headers: { 'x-doctor-token': token ?? '' } });
-        const data = await res.json();
-        if (res.ok) setReports(data.analyses ?? []);
-      } catch {
-        setReports([]);
-      } finally {
-        setLoading(false);
-      }
+    try {
+      const res = await fetch('/api/analyses', { headers: { 'x-doctor-token': token ?? '' } });
+      const data = await res.json();
+      if (res.ok) setReports(data.analyses ?? []);
+    } catch {
+      setReports([]);
+    } finally {
+      setLoading(false);
     }
+  }
 
+  useEffect(() => {
     void loadReports();
   }, []);
 
@@ -103,12 +121,28 @@ export function SavedAnalysesList() {
     }
   };
 
+  const deleteReport = async (report: SavedReport) => {
+    if (!window.confirm('Delete this report? This cannot be undone.')) return;
+    const token = getStoredDoctorToken();
+    setDeletingId(report.id);
+    try {
+      const res = await fetch(`/api/analyses/${report.id}`, { method: 'DELETE', headers: { 'x-doctor-token': token ?? '' } });
+      if (!res.ok) throw new Error('Unable to delete report');
+      setReports((current) => current.filter((entry) => entry.id !== report.id));
+      setModalReport((current) => (current?.id === report.id ? null : current));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const normalizedFilter = filter.trim().toLowerCase();
 
   const filteredReports = reports.filter((report) => {
     if (statusFilter !== 'all' && report.reportStatus !== statusFilter) return false;
     if (!normalizedFilter) return true;
-    const haystack = `${report.patientName} ${report.patientId} ${report.dateOfBirth} ${report.assessment} ${new Date(
+    const haystack = `${personName({ firstName: report.patientFirstName, lastName: report.patientLastName })} ${report.patientId} ${report.dateOfBirth} ${report.assessment} ${new Date(
       report.createdAt,
     ).toLocaleDateString()}`.toLowerCase();
     return haystack.includes(normalizedFilter);
@@ -120,21 +154,21 @@ export function SavedAnalysesList() {
     if (existing) {
       existing.reports.push(report);
     } else {
-      acc.push({ patientId, patientName: report.patientName || 'Unnamed patient', reports: [report] });
+      acc.push({ patientId, patientFirstName: report.patientFirstName, patientLastName: report.patientLastName, reports: [report] });
     }
     return acc;
   }, []);
 
   groupedReports.forEach((group) => {
     group.reports.sort((a, b) => {
-      if (sortBy === 'name') return (a.patientName || '').localeCompare(b.patientName || '');
+      if (sortBy === 'name') return reportPatientName(a).localeCompare(reportPatientName(b));
       if (sortBy === 'id') return (a.patientId || '').localeCompare(b.patientId || '');
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   });
 
   groupedReports.sort((a, b) => {
-    if (sortBy === 'name') return a.patientName.localeCompare(b.patientName);
+    if (sortBy === 'name') return reportPatientName(a).localeCompare(reportPatientName(b));
     if (sortBy === 'id') return a.patientId.localeCompare(b.patientId);
     return new Date(b.reports[0]?.createdAt ?? 0).getTime() - new Date(a.reports[0]?.createdAt ?? 0).getTime();
   });
@@ -181,24 +215,29 @@ export function SavedAnalysesList() {
           const latest = group.reports[0];
           return (
             <div key={group.patientId} className="rounded-lg border border-border bg-secondary/30 p-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 text-left"
-                onClick={() => setExpandedPatient(isExpanded ? null : group.patientId)}
-              >
-                <div>
-                  <p className="font-semibold text-foreground">{group.patientName || 'Unnamed patient'}</p>
-                  <p className="text-sm text-foreground/60">
-                    ID: {group.patientId || '—'} • {group.reports.length} saved analysis{group.reports.length > 1 ? 'es' : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(latest?.assessment ?? '').tone]}`}>
-                    {classMeta(latest?.assessment ?? '').label}
-                  </span>
-                  <span className="text-sm text-foreground/70 tabular-nums">{latest?.confidence}%</span>
-                </div>
-              </button>
+              <div className="flex w-full items-center justify-between gap-3">
+                <button type="button" className="flex flex-1 items-center justify-between gap-3 text-left" onClick={() => setExpandedPatient(isExpanded ? null : group.patientId)}>
+                  <div>
+                    <p className="font-semibold text-foreground">{reportPatientName(group)}</p>
+                    <p className="text-sm text-foreground/60">
+                      ID: {group.patientId || '—'} • {group.reports.length} saved analysis{group.reports.length > 1 ? 'es' : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(latest?.assessment ?? '').tone]}`}>
+                      {classMeta(latest?.assessment ?? '').label}
+                    </span>
+                    <span className="text-sm text-foreground/70 tabular-nums">{latest?.confidence}%</span>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverviewGroup(group)}
+                  className="flex-shrink-0 rounded-md border border-border bg-white px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-secondary"
+                >
+                  Patient overview
+                </button>
+              </div>
 
               {isExpanded ? (
                 <div className="mt-4 space-y-3">
@@ -223,6 +262,21 @@ export function SavedAnalysesList() {
                           >
                             View details
                           </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground/80 hover:bg-secondary"
+                            onClick={() => router.push(`/analysis?reportId=${report.id}`)}
+                          >
+                            <Pencil size={13} /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === report.id}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                            onClick={() => deleteReport(report)}
+                          >
+                            {deletingId === report.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete
+                          </button>
                         </div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-foreground/60">
@@ -246,7 +300,7 @@ export function SavedAnalysesList() {
           <div className="w-full max-w-4xl rounded-xl border border-border bg-white p-6 shadow-xl my-8">
             <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
               <div>
-                <h3 className="text-xl font-semibold text-foreground">{modalReport.patientName || 'Unnamed patient'}</h3>
+                <h3 className="text-xl font-semibold text-foreground">{personName({ firstName: modalReport.patientFirstName, lastName: modalReport.patientLastName }, 'Unnamed patient')}</h3>
                 <p className="text-sm text-foreground/60">
                   Patient ID: {modalReport.patientId || '—'} • DOB: {modalReport.dateOfBirth || '—'} • Saved{' '}
                   {new Date(modalReport.createdAt).toLocaleString()}
@@ -337,6 +391,23 @@ export function SavedAnalysesList() {
                     </button>
                   ))}
                 </div>
+
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+                  <Link
+                    href={`/analysis?reportId=${modalReport.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground/80 hover:bg-secondary"
+                  >
+                    <Pencil size={13} /> Edit report
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={deletingId === modalReport.id}
+                    onClick={() => deleteReport(modalReport)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  >
+                    {deletingId === modalReport.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete report
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -366,7 +437,9 @@ export function SavedAnalysesList() {
                             return (
                               <tr key={roi.id} className="border-b border-border last:border-0">
                                 <td className="p-2">
-                                  <img src={`data:image/png;base64,${roi.image}`} alt={`Cell ${roi.id}`} className="h-10 w-10 rounded object-cover" />
+                                  <button type="button" onClick={() => setZoomRoi(roi)} title="Zoom in on this cell">
+                                    <img src={`data:image/png;base64,${roi.image}`} alt={`Cell ${roi.id}`} className="h-10 w-10 rounded object-cover" />
+                                  </button>
                                 </td>
                                 <td className="p-2 text-foreground/70">#{roi.id}</td>
                                 <td className="p-2">
@@ -400,6 +473,16 @@ export function SavedAnalysesList() {
           </div>
         </div>
       ) : null}
+
+      {overviewGroup ? (
+        <PatientOverviewModal
+          patient={{ firstName: overviewGroup.patientFirstName, lastName: overviewGroup.patientLastName, id: overviewGroup.patientId }}
+          reports={overviewGroup.reports}
+          onClose={() => setOverviewGroup(null)}
+        />
+      ) : null}
+
+      {zoomRoi ? <CellZoomModal roi={zoomRoi} onClose={() => setZoomRoi(null)} /> : null}
     </div>
   );
 }

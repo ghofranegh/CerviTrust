@@ -13,6 +13,7 @@ import {
   ReportStatus,
   TONE_BADGE,
   classMeta,
+  personName,
   priorityLabel,
   priorityTone,
   reportStatusLabel,
@@ -21,7 +22,8 @@ import {
 
 interface SavedReport {
   id: string;
-  patientName: string;
+  patientFirstName: string;
+  patientLastName: string;
   patientId: string;
   assessment: string;
   confidence: number;
@@ -49,6 +51,7 @@ function recentDays(count: number): string[] {
 export default function DashboardPage() {
   return (
     <AuthGate
+      doctorOnly
       headline="Sign in to open your dashboard"
       message="Your screening activity, review queue and quality trends live behind your account."
     >
@@ -168,7 +171,7 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
           <div>
             <h1 className="text-4xl font-semibold text-foreground mb-2">Practitioner dashboard</h1>
             <p className="text-foreground/60">
-              {doctor.fullName} — {doctor.hospital || 'no site recorded'}
+              {personName(doctor)} — {doctor.hospital || 'no site recorded'}
             </p>
           </div>
           <div className="flex gap-2">
@@ -251,7 +254,7 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
                         {reviewQueue.map((report) => (
                           <tr key={report.id} className="border-b border-border last:border-0">
                             <td className="py-2.5 pr-4">
-                              <p className="font-medium text-foreground">{report.patientName || 'Unnamed patient'}</p>
+                              <p className="font-medium text-foreground">{personName({ firstName: report.patientFirstName, lastName: report.patientLastName }, 'Unnamed patient')}</p>
                               <p className="text-xs text-foreground/60">{report.patientId || '—'}</p>
                             </td>
                             <td className="py-2.5 pr-4">

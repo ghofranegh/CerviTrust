@@ -1,29 +1,40 @@
-import { CellReviewMap, RegionOfInterest, effectiveClass } from '@/lib/analysis-types';
+import { CellReviewMap, RegionOfInterest, effectiveClass, personName } from '@/lib/analysis-types';
 
 export interface PatientInfo {
-  patientName: string;
+  patientRecordId: string;
+  patientFirstName: string;
+  patientLastName: string;
   patientId: string;
   dateOfBirth: string;
   collectionDate: string;
   sampleId: string;
+  phone: string;
   notes: string;
 }
 
 export const EMPTY_PATIENT: PatientInfo = {
-  patientName: '',
+  patientRecordId: '',
+  patientFirstName: '',
+  patientLastName: '',
   patientId: '',
   dateOfBirth: '',
   collectionDate: '',
   sampleId: '',
+  phone: '',
   notes: '',
 };
 
 /** Fields a report cannot be saved without — mirrored server-side. */
 export const REQUIRED_PATIENT_FIELDS: Array<{ key: keyof PatientInfo; label: string }> = [
-  { key: 'patientName', label: 'Patient name' },
+  { key: 'patientFirstName', label: 'Patient first name' },
+  { key: 'patientLastName', label: 'Patient last name' },
   { key: 'patientId', label: 'Patient ID' },
   { key: 'dateOfBirth', label: 'Date of birth' },
 ];
+
+export function patientDisplayName(patient: Pick<PatientInfo, 'patientFirstName' | 'patientLastName'>): string {
+  return personName({ firstName: patient.patientFirstName, lastName: patient.patientLastName }, 'Unnamed patient');
+}
 
 export function missingPatientFields(patient: PatientInfo): Array<keyof PatientInfo> {
   return REQUIRED_PATIENT_FIELDS.filter(({ key }) => !patient[key]?.trim()).map(({ key }) => key);
@@ -40,7 +51,7 @@ function hashString(value: string, multiplier: number): number {
 /** Stable, non-identifying study reference derived from the sample identifiers. */
 export function studyReference(patient: PatientInfo, analyzedAt?: string): string {
   const date = (analyzedAt ?? new Date().toISOString()).slice(0, 10).replace(/-/g, '');
-  const seed = patient.patientId || patient.patientName || 'ANON';
+  const seed = patient.patientId || patientDisplayName(patient) || 'ANON';
   return `CT-${date}-${hashString(seed, 31).toString(36).toUpperCase().padStart(5, '0').slice(0, 5)}`;
 }
 

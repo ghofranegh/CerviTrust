@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, Flag, Pencil, X } from 'lucide-react';
 import { classColor } from '@/components/charts';
+import { CellZoomModal } from '@/components/cell-zoom-modal';
 import {
   CellReview,
   CellReviewMap,
@@ -50,6 +51,7 @@ export function CellReviewTable({
   const [correcting, setCorrecting] = useState<number | null>(null);
   const [correctionClass, setCorrectionClass] = useState<string>('');
   const [correctionNote, setCorrectionNote] = useState('');
+  const [zoomId, setZoomId] = useState<number | null>(null);
 
   const decisionOf = (id: number): ReviewDecision => reviews[String(id)]?.decision ?? 'pending';
 
@@ -246,7 +248,7 @@ export function CellReviewTable({
                 >
                   <td className="px-4 py-3 font-medium text-foreground tabular-nums">{roi.id}</td>
                   <td className="px-4 py-3">
-                    <button type="button" onClick={() => onSelect?.(roi.id)} title="Show this instance in the viewer">
+                    <button type="button" onClick={() => setZoomId(roi.id)} title="Zoom in on this cell">
                       <img src={`data:image/png;base64,${roi.image}`} alt={`Cell ${roi.id}`} className="h-12 w-12 rounded-md border border-border object-cover" />
                     </button>
                   </td>
@@ -395,6 +397,13 @@ export function CellReviewTable({
             ))}
           </ul>
         </div>
+      ) : null}
+
+      {zoomId !== null ? (
+        (() => {
+          const roi = regions.find((entry) => entry.id === zoomId);
+          return roi ? <CellZoomModal roi={roi} onClose={() => setZoomId(null)} /> : null;
+        })()
       ) : null}
     </div>
   );

@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
 import { AuthGate } from '@/components/auth-gate';
@@ -8,6 +9,7 @@ import { SavedAnalysesList } from '@/components/saved-analyses-list';
 export default function SavedReportsPage() {
   return (
     <AuthGate
+      doctorOnly
       headline="Sign in to open your reports"
       message="Saved reports, patient details and review decisions are tied to your account."
     >
@@ -24,7 +26,9 @@ export default function SavedReportsPage() {
             </div>
 
             <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
-              <SavedAnalysesList />
+              <Suspense fallback={<p className="text-sm text-foreground/70">Loading saved analyses…</p>}>
+                <SavedAnalysesList />
+              </Suspense>
             </div>
           </section>
 

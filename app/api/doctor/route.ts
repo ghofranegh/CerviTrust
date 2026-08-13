@@ -28,7 +28,8 @@ export async function PATCH(req: NextRequest) {
     const body = (await req.json()) ?? {};
     // Only these fields can be set from the profile form — never the role.
     const updated = await updateDoctor(doctor.id, {
-      fullName: body.fullName,
+      firstName: body.firstName,
+      lastName: body.lastName,
       email: body.email,
       hospital: body.hospital,
       specialty: body.specialty,

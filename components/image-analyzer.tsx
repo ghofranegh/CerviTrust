@@ -11,15 +11,15 @@ import { SegmentationViewer } from '@/components/segmentation-viewer';
 import { CellReviewTable } from '@/components/cell-review-table';
 import { ReportPreview } from '@/components/report-preview';
 import { ReportDocument } from '@/components/report-document';
-import { EMPTY_PATIENT, PatientInfo, REQUIRED_PATIENT_FIELDS, missingPatientFields } from '@/lib/report-utils';
+import { PatientPicker } from '@/components/patient-picker';
+import { EMPTY_PATIENT, missingPatientFields } from '@/lib/report-utils';
 import { DonutChart, MeterBar, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
+import { useAnalysisSession, type TabId } from '@/lib/use-analysis-session';
 import {
   Analysis,
   CellReview,
-  CellReviewMap,
   DoctorProfile,
-  ReportStatus,
   TONE_BADGE,
   classMeta,
   formatNumber,
@@ -30,9 +30,6 @@ import {
   toPercent,
 } from '@/lib/analysis-types';
 
-type AnalysisStatus = 'idle' | 'analyzing' | 'complete';
-type TabId = 'overview' | 'quality' | 'segmentation' | 'review' | 'report';
-
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'quality', label: 'Quality control' },
@@ -41,28 +38,55 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'report', label: 'Report' },
 ];
 
-export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | null; onSaved?: () => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [status, setStatus] = useState<AnalysisStatus>('idle');
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [analysisError, setAnalysisError] = useState('');
+export function ImageAnalyzer({
+  doctor,
+  onSaved,
+  initialPatientId,
+  initialReportId,
+}: {
+  doctor?: DoctorProfile | null;
+  onSaved?: () => void;
+  initialPatientId?: string;
+  initialReportId?: string;
+}) {
+  const {
+    file,
+    preview,
+    status,
+    analysis,
+    analysisError,
+    patientInfo,
+    cellReviews,
+    observations,
+    reportStatus,
+    selectedRegionId,
+    savedReportId,
+    savedAt,
+    activeTab,
+    set,
+    reset,
+  } = useAnalysisSession();
+
+  const setFile = set('file');
+  const setPreview = set('preview');
+  const setStatus = set('status');
+  const setAnalysis = set('analysis');
+  const setAnalysisError = set('analysisError');
+  const setPatientInfo = set('patientInfo');
+  const setCellReviews = set('cellReviews');
+  const setObservations = set('observations');
+  const setReportStatus = set('reportStatus');
+  const setSelectedRegionId = set('selectedRegionId');
+  const setSavedReportId = set('savedReportId');
+  const setSavedAt = set('savedAt');
+  const setActiveTab = set('activeTab');
+
   const [doctorProfile, setDoctorProfile] = useState<DoctorProfile | null>(doctor ?? null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
-
-  const [patientInfo, setPatientInfo] = useState<PatientInfo>(EMPTY_PATIENT);
-  const [cellReviews, setCellReviews] = useState<CellReviewMap>({});
-  const [observations, setObservations] = useState('');
-  const [reportStatus, setReportStatus] = useState<ReportStatus>('draft');
-  const [selectedRegionId, setSelectedRegionId] = useState<number | null>(null);
-
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
-  // Identifier of the stored report; until it exists, nothing can be validated.
-  const [savedReportId, setSavedReportId] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [patientErrors, setPatientErrors] = useState<Array<keyof PatientInfo>>([]);
+  const [patientErrors, setPatientErrors] = useState<string[]>([]);
+  const [loadingReport, setLoadingReport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadingMessages = ['Analysing image', 'Detecting nuclei', 'Measuring morphometry', 'Generating heatmaps', 'Preparing report'];
@@ -93,6 +117,77 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
       .then((data) => setDoctorProfile(data.doctor ?? null))
       .catch(() => setDoctorProfile(null));
   }, [doctor]);
+
+  // Reopen a saved report for editing — restores the analysis, patient identity and review decisions.
+  useEffect(() => {
+    if (!initialReportId || savedReportId === initialReportId) return;
+    const token = getStoredDoctorToken();
+    if (!token) return;
+
+    setLoadingReport(true);
+    void fetch(`/api/analyses/${initialReportId}`, { headers: { 'x-doctor-token': token } })
+      .then((res) => res.json())
+      .then((data) => {
+        const record = data.analysis;
+        if (!record) return;
+        const { patientInfo: storedPatientInfo, ...analysisRest } = (record.analysisData ?? {}) as Record<string, unknown> & { patientInfo?: Record<string, unknown> };
+        const restoredAnalysis = analysisRest as unknown as Analysis;
+
+        setAnalysis(restoredAnalysis);
+        setPatientInfo({
+          patientRecordId: record.patientRecordId ?? record.patientId ?? '',
+          patientFirstName: record.patientFirstName ?? '',
+          patientLastName: record.patientLastName ?? '',
+          patientId: record.patientId ?? '',
+          dateOfBirth: record.dateOfBirth ?? '',
+          collectionDate: (storedPatientInfo?.collectionDate as string) ?? '',
+          sampleId: (storedPatientInfo?.sampleId as string) ?? '',
+          phone: (storedPatientInfo?.phone as string) ?? '',
+          notes: record.notes ?? '',
+        });
+        setCellReviews(record.cellReviews ?? {});
+        setObservations(record.reviewerObservations ?? '');
+        setReportStatus(record.reportStatus ?? 'draft');
+        setSavedReportId(record.id);
+        setSavedAt(record.updatedAt ?? record.createdAt ?? null);
+        // `segmentation.background` is a binary mask, not a photo — the contour
+        // overlay is the closest thing to the original field we have on record.
+        const segmentation = restoredAnalysis.segmentation;
+        setPreview(segmentation?.overlay ? `data:image/png;base64,${segmentation.overlay}` : null);
+        setSelectedRegionId(restoredAnalysis.regions_of_interest?.[0]?.id ?? null);
+        setStatus('complete');
+        setActiveTab('report');
+      })
+      .catch(() => {
+        setSaveMessage({ tone: 'error', text: 'Unable to load this report for editing.' });
+      })
+      .finally(() => setLoadingReport(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialReportId]);
+
+  // Starting a fresh analysis from a patient's roster row — pre-fill their identity.
+  useEffect(() => {
+    if (!initialPatientId || initialReportId || patientInfo.patientRecordId === initialPatientId) return;
+    const token = getStoredDoctorToken();
+    if (!token) return;
+
+    void fetch(`/api/patients/${initialPatientId}`, { headers: { 'x-doctor-token': token } })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.patient) return;
+        setPatientInfo({
+          ...EMPTY_PATIENT,
+          patientRecordId: data.patient.id,
+          patientFirstName: data.patient.firstName,
+          patientLastName: data.patient.lastName,
+          patientId: data.patient.id,
+          dateOfBirth: data.patient.dateOfBirth,
+          phone: data.patient.phone,
+        });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPatientId, initialReportId]);
 
   const handleFileSelect = (selectedFile: File) => {
     if (!selectedFile.type.startsWith('image/')) {
@@ -203,21 +298,9 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
   };
 
   const handleClear = () => {
-    setFile(null);
-    setPreview(null);
-    setStatus('idle');
-    setAnalysis(null);
-    setAnalysisError('');
-    setPatientInfo(EMPTY_PATIENT);
-    setCellReviews({});
-    setObservations('');
-    setReportStatus('draft');
-    setSelectedRegionId(null);
+    reset();
     setSaveMessage(null);
-    setSavedReportId(null);
-    setSavedAt(null);
     setPatientErrors([]);
-    setActiveTab('overview');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -256,7 +339,9 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-doctor-token': token ?? '' },
             body: JSON.stringify({
-              patientName: patientInfo.patientName,
+              patientRecordId: patientInfo.patientRecordId,
+              patientFirstName: patientInfo.patientFirstName,
+              patientLastName: patientInfo.patientLastName,
               patientId: patientInfo.patientId,
               dateOfBirth: patientInfo.dateOfBirth,
               notes: patientInfo.notes,
@@ -292,7 +377,7 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
   };
 
   /** Status changes are a decision on a stored report, so they go through PATCH. */
-  const handleStatusChange = async (nextStatus: ReportStatus) => {
+  const handleStatusChange = async (nextStatus: typeof reportStatus) => {
     if (!savedReportId) {
       setSaveMessage({ tone: 'error', text: 'Save the report before changing its status.' });
       return;
@@ -346,6 +431,7 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
   return (
     <>
     <div className="screen-only space-y-8">
+      {loadingReport ? <p className="text-sm text-foreground/60">Loading saved report…</p> : null}
       {/* Upload area */}
       {!preview ? (
         <div
@@ -624,10 +710,7 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
                     reviews={cellReviews}
                     availableClasses={availableClasses}
                     onReview={handleReview}
-                    onSelect={(id) => {
-                      setSelectedRegionId(id);
-                      setActiveTab('segmentation');
-                    }}
+                    onSelect={(id) => setSelectedRegionId(id)}
                     selectedId={selectedRegionId}
                   />
                 )}
@@ -639,73 +722,68 @@ export function ImageAnalyzer({ doctor, onSaved }: { doctor?: DoctorProfile | nu
                       <div>
                         <h3 className="text-lg font-semibold text-foreground">Patient and sample details</h3>
                         <p className="text-sm text-foreground/60">
-                          Patient name, patient ID and date of birth are required — a report cannot be saved without
-                          them.
+                          Attach a patient from your roster, or register a new one — a report cannot be saved without a
+                          unique patient ID and date of birth.
                         </p>
                       </div>
 
                       {!doctorProfile ? (
                         <p className="text-sm text-foreground/60">Sign in to attach patient details and save this report to your account.</p>
                       ) : (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {(
-                            [
-                              { key: 'patientName', label: 'Patient name', type: 'text', required: true },
-                              { key: 'patientId', label: 'Patient ID', type: 'text', required: true },
-                              { key: 'dateOfBirth', label: 'Date of birth', type: 'date', required: true },
-                              { key: 'collectionDate', label: 'Collection date', type: 'date', required: false },
-                              { key: 'sampleId', label: 'Sample / slide ID', type: 'text', required: false },
-                            ] as Array<{ key: keyof PatientInfo; label: string; type: string; required: boolean }>
-                          ).map((field) => {
-                            const invalid = patientErrors.includes(field.key);
-                            return (
-                              <label key={field.key} className="flex flex-col gap-1">
-                                <span className="text-xs font-medium text-foreground/70">
-                                  {field.label}
-                                  {field.required ? <span className="text-primary"> *</span> : null}
+                        <div className="space-y-4">
+                          <PatientPicker value={patientInfo} onChange={(next) => {
+                            setPatientInfo(next);
+                            setPatientErrors([]);
+                          }} />
+                          {patientErrors.length ? (
+                            <p className="text-xs text-destructive">Missing: {patientErrors.join(', ')}.</p>
+                          ) : null}
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Collection date</span>
+                              <input
+                                type="date"
+                                className="rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                value={patientInfo.collectionDate}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, collectionDate: e.target.value })}
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Sample / slide ID</span>
+                              <input
+                                type="text"
+                                className="rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                value={patientInfo.sampleId}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, sampleId: e.target.value })}
+                              />
+                            </label>
+
+                            <label className="md:col-span-2 flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Clinical notes</span>
+                              <textarea
+                                className="min-h-20 rounded-lg border border-border px-3 py-2 text-sm"
+                                placeholder="Context, previous results, clinical history…"
+                                value={patientInfo.notes}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, notes: e.target.value })}
+                              />
+                            </label>
+
+                            <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+                              <Button onClick={handleSaveAnalysis} disabled={saveLoading}>
+                                {saveLoading ? 'Saving…' : savedReportId ? 'Update saved report' : 'Save report'}
+                              </Button>
+                              {savedReportId ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-md border border-status-success/30 bg-status-success/10 px-2 py-1 text-xs font-medium text-status-success">
+                                  <Check size={13} /> Stored in your reports
                                 </span>
-                                <input
-                                  type={field.type}
-                                  className={`rounded-lg border px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 ${
-                                    invalid
-                                      ? 'border-destructive bg-destructive/5 focus:ring-destructive/20'
-                                      : 'border-border focus:border-primary focus:ring-primary/20'
-                                  }`}
-                                  value={patientInfo[field.key]}
-                                  onChange={(e) => {
-                                    setPatientInfo({ ...patientInfo, [field.key]: e.target.value });
-                                    setPatientErrors((current) => current.filter((key) => key !== field.key));
-                                  }}
-                                />
-                                {invalid ? <span className="text-xs text-destructive">{field.label} is required.</span> : null}
-                              </label>
-                            );
-                          })}
-
-                          <label className="md:col-span-2 flex flex-col gap-1">
-                            <span className="text-xs font-medium text-foreground/70">Clinical notes</span>
-                            <textarea
-                              className="min-h-20 rounded-lg border border-border px-3 py-2 text-sm"
-                              placeholder="Context, previous results, clinical history…"
-                              value={patientInfo.notes}
-                              onChange={(e) => setPatientInfo({ ...patientInfo, notes: e.target.value })}
-                            />
-                          </label>
-
-                          <div className="md:col-span-2 flex flex-wrap items-center gap-3">
-                            <Button onClick={handleSaveAnalysis} disabled={saveLoading}>
-                              {saveLoading ? 'Saving…' : savedReportId ? 'Update saved report' : 'Save report'}
-                            </Button>
-                            {savedReportId ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-md border border-status-success/30 bg-status-success/10 px-2 py-1 text-xs font-medium text-status-success">
-                                <Check size={13} /> Stored in your reports
-                              </span>
-                            ) : null}
-                            {saveMessage ? (
-                              <span className={`text-sm ${saveMessage.tone === 'error' ? 'text-destructive' : 'text-status-success'}`}>
-                                {saveMessage.text}
-                              </span>
-                            ) : null}
+                              ) : null}
+                              {saveMessage ? (
+                                <span className={`text-sm ${saveMessage.tone === 'error' ? 'text-destructive' : 'text-status-success'}`}>
+                                  {saveMessage.text}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       )}
