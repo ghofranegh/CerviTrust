@@ -177,27 +177,73 @@ function migrateAnalysis(analysis: (SavedAnalysis & { patientName?: string }) | 
   };
 }
 
+/**
+ * Only a genuinely missing file (a fresh install) is safe to treat as "start
+ * empty". Any other failure — corrupted JSON, an unresolved git merge
+ * conflict left in the file, a permissions error — must NOT be silently
+ * replaced with an empty store: this file is the only copy of hospital
+ * account and report data. Losing it must be loud, not automatic.
+ */
 async function readStore(): Promise<DoctorStoreData> {
   await fs.mkdir(STORE_DIR, { recursive: true });
+
+  let raw: string;
   try {
-    const raw = await fs.readFile(STORE_PATH, 'utf8');
-    const parsed = JSON.parse(raw) as DoctorStoreData;
-    return {
-      doctors: (Array.isArray(parsed.doctors) ? parsed.doctors : []).map(migrateDoctor),
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      patients: Array.isArray(parsed.patients) ? parsed.patients : [],
-      analyses: (Array.isArray(parsed.analyses) ? parsed.analyses : []).map(migrateAnalysis),
-      events: Array.isArray(parsed.events) ? parsed.events : [],
-    };
-  } catch {
-    await writeStore(defaultData);
-    return defaultData;
+    raw = await fs.readFile(STORE_PATH, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      await writeStore(defaultData);
+      return defaultData;
+    }
+    throw error;
   }
+
+  let parsed: DoctorStoreData;
+  try {
+    parsed = JSON.parse(raw) as DoctorStoreData;
+  } catch (error) {
+    throw new Error(
+      `data/doctor-store.json exists but is not valid JSON (${(error as Error).message}). Refusing to ` +
+        'overwrite it automatically. Restore a recent snapshot from data/backups/, or from git history, before retrying.',
+    );
+  }
+
+  return {
+    doctors: (Array.isArray(parsed.doctors) ? parsed.doctors : []).map(migrateDoctor),
+    sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+    patients: Array.isArray(parsed.patients) ? parsed.patients : [],
+    analyses: (Array.isArray(parsed.analyses) ? parsed.analyses : []).map(migrateAnalysis),
+    events: Array.isArray(parsed.events) ? parsed.events : [],
+  };
 }
 
+const BACKUP_DIR = path.join(STORE_DIR, 'backups');
+const MAX_BACKUPS = 30;
+
+/** Snapshots the current file before it's overwritten — the recovery path if a future write ever goes wrong. */
+async function backupStore(): Promise<void> {
+  try {
+    await fs.access(STORE_PATH);
+  } catch {
+    return; // Nothing to back up on the very first write.
+  }
+
+  await fs.mkdir(BACKUP_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  await fs.copyFile(STORE_PATH, path.join(BACKUP_DIR, `doctor-store.${stamp}.json`));
+
+  const files = (await fs.readdir(BACKUP_DIR)).filter((name) => name.startsWith('doctor-store.')).sort();
+  const excess = files.slice(0, Math.max(0, files.length - MAX_BACKUPS));
+  await Promise.all(excess.map((name) => fs.unlink(path.join(BACKUP_DIR, name))));
+}
+
+/** Writes via a temp file + rename so a crash mid-write can never leave a half-written, corrupted store on disk. */
 async function writeStore(data: DoctorStoreData): Promise<void> {
   await fs.mkdir(STORE_DIR, { recursive: true });
-  await fs.writeFile(STORE_PATH, JSON.stringify(data, null, 2), 'utf8');
+  await backupStore();
+  const tmpPath = `${STORE_PATH}.tmp-${process.pid}-${Date.now()}`;
+  await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+  await fs.rename(tmpPath, STORE_PATH);
 }
 
 function hashPassword(password: string): string {
@@ -345,8 +391,11 @@ export async function createAccount(
   if (!isValidTunisianPhone(phone)) {
     throw new Error('Phone number must be exactly 8 digits.');
   }
-  if (store.doctors.some((entry) => entry.email === email)) {
-    throw new Error('An account already exists with this email.');
+  // An email can be reused across roles (e.g. the same person as both a
+  // practitioner and an administrator, each with their own password) — but
+  // never twice for the same role, which would be ambiguous at login.
+  if (store.doctors.some((entry) => entry.email === email && entry.role === role)) {
+    throw new Error(`An account already exists with this email for the ${role === 'admin' ? 'administrator' : 'doctor'} role.`);
   }
 
   const now = new Date().toISOString();
@@ -444,12 +493,16 @@ export async function adminDeleteAccount(callerId: string, targetId: string) {
 export async function loginDoctor(email: string, password: string) {
   const normalizedEmail = sanitizeString(email).toLowerCase();
   const store = await readStore();
-  const doctor = store.doctors.find((item) => item.email === normalizedEmail);
-  if (!doctor) {
+  // The same email can belong to up to two accounts (one doctor, one admin) —
+  // the password is what disambiguates which one the person means to sign
+  // into, so every candidate for this email is tried in turn.
+  const candidates = store.doctors.filter((item) => item.email === normalizedEmail);
+  if (!candidates.length) {
     throw new Error('No account found for this email.');
   }
 
-  if (!verifyPassword(password, doctor.passwordHash)) {
+  const doctor = candidates.find((candidate) => verifyPassword(password, candidate.passwordHash));
+  if (!doctor) {
     throw new Error('Incorrect password.');
   }
 
@@ -534,8 +587,11 @@ export async function updateDoctor(doctorId: string, updates: DoctorUpdate) {
   if (updates.email !== undefined && !isValidEmail(email)) {
     throw new Error('Enter a valid email address.');
   }
-  if (email !== doctor.email && store.doctors.some((entry) => entry.email === email)) {
-    throw new Error('Another account already uses this email.');
+  if (
+    email !== doctor.email &&
+    store.doctors.some((entry) => entry.id !== doctorId && entry.email === email && entry.role === doctor.role)
+  ) {
+    throw new Error('Another account with this role already uses this email.');
   }
 
   if (updates.avatar && updates.avatar.length > MAX_AVATAR_BYTES) {
@@ -585,23 +641,42 @@ export async function deleteDoctor(doctorId: string) {
   await writeStore(store);
 }
 
-/** Always responds the same way regardless of whether the email exists, to avoid account enumeration. */
+/**
+ * Always responds the same way regardless of whether the email exists, to
+ * avoid account enumeration. When the same email is shared by a doctor
+ * account and an admin account, a reset link can't say by itself which one
+ * to reset — so each matching account gets its own token and its own
+ * email, labelled by role, sent to the same inbox.
+ */
 export async function requestPasswordReset(email: string): Promise<void> {
   const normalizedEmail = sanitizeString(email).toLowerCase();
   const store = await readStore();
-  const doctor = store.doctors.find((entry) => entry.email === normalizedEmail);
-  if (!doctor) return;
+  const matches = store.doctors.filter((entry) => entry.email === normalizedEmail);
+  if (!matches.length) return;
 
-  const token = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
-  store.doctors = store.doctors.map((entry) =>
-    entry.id === doctor.id ? { ...entry, resetToken: token, resetTokenExpiresAt: expiresAt } : entry,
-  );
+  const tokensById = new Map(matches.map((doctor) => [doctor.id, crypto.randomUUID()]));
+
+  store.doctors = store.doctors.map((entry) => {
+    const token = tokensById.get(entry.id);
+    return token ? { ...entry, resetToken: token, resetTokenExpiresAt: expiresAt } : entry;
+  });
   await writeStore(store);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const resetUrl = `${appUrl}/reset-password?token=${token}`;
-  void sendMail({ to: doctor.email, ...passwordResetEmail({ firstName: doctor.firstName, resetUrl }) });
+  const showRoleLabel = matches.length > 1;
+  for (const doctor of matches) {
+    const token = tokensById.get(doctor.id)!;
+    const resetUrl = `${appUrl}/reset-password?token=${token}`;
+    void sendMail({
+      to: doctor.email,
+      ...passwordResetEmail({
+        firstName: doctor.firstName,
+        resetUrl,
+        roleLabel: showRoleLabel ? (doctor.role === 'admin' ? 'administrator' : 'practitioner') : undefined,
+      }),
+    });
+  }
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<void> {

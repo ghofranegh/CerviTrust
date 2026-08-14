@@ -18,3 +18,11 @@ env/
 node_modules
 .next/
 .DS_Store
+
+# Runtime hospital data — this is live application data, not source code.
+# It must never go through a git merge/rebase: a conflict here previously
+# got committed with literal <<<<<<< markers, which corrupted the JSON and
+# caused every account to be silently wiped on the next read. Back it up
+# via data/backups/ (kept locally, see lib/doctor-store.ts) instead.
+data/doctor-store.json
+data/backups/

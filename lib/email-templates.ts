@@ -53,18 +53,36 @@ function button(url: string, label: string): string {
   return `<a href="${url}" style="display:inline-block;margin-top:8px;background:${PRIMARY};color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:8px;">${label}</a>`;
 }
 
-export function passwordResetEmail({ firstName, resetUrl }: { firstName: string; resetUrl: string }) {
+export function passwordResetEmail({
+  firstName,
+  resetUrl,
+  roleLabel,
+}: {
+  firstName: string;
+  resetUrl: string;
+  /** Set only when this email address has more than one account (e.g. both a doctor and an admin identity) — disambiguates which one this link resets. */
+  roleLabel?: 'administrator' | 'practitioner';
+}) {
+  const subject = roleLabel ? `Reset your CerviTrust ${roleLabel} password` : 'Reset your CerviTrust password';
   const body = `
     <h1 style="margin:0 0 12px;font-size:20px;color:${FOREGROUND};">Reset your password</h1>
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${FOREGROUND};">
-      Hi ${firstName || 'there'}, we received a request to reset the password for your CerviTrust account. This link
-      is valid for 1 hour.
+      Hi ${firstName || 'there'}, we received a request to reset the password for your CerviTrust
+      ${roleLabel ? `<strong>${roleLabel}</strong> ` : ''}account. This link is valid for 1 hour.
     </p>
+    ${
+      roleLabel
+        ? `<p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:${MUTED};">
+      This email address also has another CerviTrust account under a different role — you may receive a second,
+      separate reset link for it. Use the one that matches the account you meant to reset.
+    </p>`
+        : ''
+    }
     ${button(resetUrl, 'Choose a new password')}
     <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:${MUTED};">
       If you didn't request this, you can safely ignore this email — your password will stay unchanged.
     </p>`;
-  return { subject: 'Reset your CerviTrust password', html: renderEmailLayout(body, 'Reset your CerviTrust password') };
+  return { subject, html: renderEmailLayout(body, subject) };
 }
 
 export function accountCreatedEmail({
