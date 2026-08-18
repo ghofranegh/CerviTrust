@@ -63,9 +63,9 @@ Grad-CAM validation: heatmaps on blocks.2 (not conv_head, which is too coarse at
 
 It runs on Kaggle with the datasets mounted under /kaggle/input/ and exports the model_bundle/ this platform loads:
 
-efficientnet_b0.pt — trained classifier (MAP weights)
-laplace_state.pt — fitted Laplace posterior (last layer)
-hovernet_fast-pannuke.pth — pre-trained segmentation weights
+efficientnet_b0.pt:  trained classifier (MAP weights)
+laplace_state.pt: fitted Laplace posterior (last layer)
+hovernet_fast-pannuke.pth: pre-trained segmentation weights
 
 **Datasets:** [SIPaKMeD](https://www.cs.uoi.gr/~marina/sipakmed.html) · Herlev · Cx22 (segmentation ground truth)
 
