@@ -7,7 +7,12 @@ import { LayoutDashboard, LogOut, Menu, Settings, X } from 'lucide-react';
 import Image from 'next/image';
 import { Avatar } from '@/components/avatar';
 import { useDoctorSession } from '@/lib/use-doctor-session';
-import { personName } from '@/lib/analysis-types';
+import { personName, professionalTitleLabel } from '@/lib/analysis-types';
+
+function roleLabel(doctor: { role: 'doctor' | 'admin'; professionalTitle?: string | null }): string {
+  if (doctor.role === 'admin') return 'Administrator';
+  return professionalTitleLabel(doctor.professionalTitle as never) !== '—' ? professionalTitleLabel(doctor.professionalTitle as never) : 'Practitioner';
+}
 
 export function Navigation() {
   const pathname = usePathname();
@@ -95,7 +100,7 @@ export function Navigation() {
                       <div className="min-w-0">
                         <p className="truncate font-medium text-foreground">{personName(doctor)}</p>
                         <p className="truncate text-xs text-foreground/60">
-                          {doctor.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
+                          {roleLabel(doctor)}
                         </p>
                       </div>
                     </div>
@@ -150,7 +155,7 @@ export function Navigation() {
                   <span className="min-w-0">
                     <span className="block truncate">{personName(doctor)}</span>
                     <span className="block text-xs text-foreground/60">
-                      {doctor.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
+                      {roleLabel(doctor)}
                     </span>
                   </span>
                 </Link>

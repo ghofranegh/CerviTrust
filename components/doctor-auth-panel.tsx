@@ -41,8 +41,8 @@ export function DoctorAuthPanel({
     lastName: '',
     email: '',
     password: '',
+    confirmPassword: '',
     hospital: '',
-    specialty: '',
     phone: '',
   });
   const [loading, setLoading] = useState(false);
@@ -66,6 +66,9 @@ export function DoctorAuthPanel({
     try {
       if (needsBootstrap && form.password.length < 8) {
         throw new Error('Choose a password of at least 8 characters.');
+      }
+      if (needsBootstrap && form.password !== form.confirmPassword) {
+        throw new Error('Password and confirmation do not match.');
       }
 
       const endpoint = needsBootstrap ? '/api/auth/signup' : '/api/auth/login';
@@ -124,9 +127,8 @@ export function DoctorAuthPanel({
                 required
               />
             </div>
-            <input className={FIELD} placeholder="Hospital or laboratory" value={form.hospital} onChange={(event) => update({ hospital: event.target.value })} required />
             <div className="grid gap-3 sm:grid-cols-2">
-              <input className={FIELD} placeholder="Specialty" value={form.specialty} onChange={(event) => update({ specialty: event.target.value })} />
+              <input className={FIELD} placeholder="Organization / Hospital / Laboratory" value={form.hospital} onChange={(event) => update({ hospital: event.target.value })} required />
               <PhoneField value={form.phone} onChange={(value) => update({ phone: value })} />
             </div>
           </>
@@ -162,6 +164,18 @@ export function DoctorAuthPanel({
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
+
+        {needsBootstrap ? (
+          <input
+            className={FIELD}
+            placeholder="Confirm password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="new-password"
+            value={form.confirmPassword}
+            onChange={(event) => update({ confirmPassword: event.target.value })}
+            required
+          />
+        ) : null}
 
         {!needsBootstrap ? (
           <div className="text-right">

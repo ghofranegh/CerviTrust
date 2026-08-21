@@ -1,10 +1,10 @@
 'use client';
 
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
-import { Camera, Check, KeyRound, Loader2, LogOut, Pencil, Trash2, X } from 'lucide-react';
+import { Camera, Check, KeyRound, Loader2, LogOut, Pencil, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { getStoredDoctorToken } from '@/lib/client-auth';
-import { personName, type DoctorProfile } from '@/lib/analysis-types';
+import { SPECIALTY_LABELS, personName, professionalTitleLabel, type DoctorProfile, type Specialty } from '@/lib/analysis-types';
 
 const FIELD =
   'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
@@ -88,7 +88,6 @@ export function DoctorProfilePanel({
   const [profile, setProfile] = useState(doctor);
   const [editing, setEditing] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
@@ -100,6 +99,7 @@ export function DoctorProfilePanel({
     email: doctor.email,
     hospital: doctor.hospital,
     specialty: doctor.specialty,
+    department: doctor.department,
     phone: doctor.phone,
   });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -112,6 +112,7 @@ export function DoctorProfilePanel({
       email: doctor.email,
       hospital: doctor.hospital,
       specialty: doctor.specialty,
+      department: doctor.department,
       phone: doctor.phone,
     });
   }, [doctor]);
@@ -199,24 +200,16 @@ export function DoctorProfilePanel({
     }
   }
 
-  async function deleteProfile() {
-    setLoading(true);
-    try {
-      const token = getStoredDoctorToken();
-      const res = await fetch('/api/doctor', { method: 'DELETE', headers: { 'x-doctor-token': token ?? '' } });
-      if (!res.ok) throw new Error('Unable to delete account');
-      onLogout?.();
-    } catch (error) {
-      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : 'Delete failed' });
-      setLoading(false);
-      setConfirmingDelete(false);
-    }
-  }
-
   const details = [
     { label: 'Email', value: profile.email },
-    { label: 'Hospital or laboratory', value: profile.hospital || 'Not provided' },
-    { label: 'Specialty', value: profile.specialty || 'Not provided' },
+    { label: 'Organization / Hospital / Laboratory', value: profile.hospital || 'Not provided' },
+    ...(profile.role === 'doctor'
+      ? [
+          { label: 'Professional title', value: professionalTitleLabel(profile.professionalTitle) },
+          { label: 'Specialty', value: profile.specialty ? SPECIALTY_LABELS[profile.specialty] : 'Not provided' },
+          { label: 'Department / Service', value: profile.department || 'Not provided' },
+        ]
+      : []),
     { label: 'Phone', value: profile.phone || 'Not provided' },
     { label: 'Member since', value: new Date(profile.createdAt).toLocaleDateString() },
     { label: 'Last updated', value: new Date(profile.updatedAt).toLocaleDateString() },
@@ -251,7 +244,7 @@ export function DoctorProfilePanel({
               <div className="pb-1">
                 <h2 className="text-2xl font-semibold text-foreground">{personName(profile)}</h2>
                 <p className="text-sm text-foreground/60">
-                  {profile.role === 'admin' ? 'Administrator' : 'Doctor / Biologist'}
+                  {profile.role === 'admin' ? 'Administrator' : professionalTitleLabel(profile.professionalTitle)}
                   {profile.hospital ? ` · ${profile.hospital}` : ''}
                 </p>
               </div>
@@ -319,23 +312,10 @@ export function DoctorProfilePanel({
             <KeyRound size={15} /> Change password
           </button>
         </div>
-      </div>
-
-      {/* Danger zone */}
-      <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">Delete account</h3>
-            <p className="text-sm text-foreground/70">Removes your account and every report you saved. This cannot be undone.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setConfirmingDelete(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-destructive/40 bg-white px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 size={15} /> Delete account
-          </button>
-        </div>
+        <p className="mt-4 border-t border-border pt-4 text-xs text-foreground/50">
+          Accounts can only be removed by an administrator, from the administration console — you can edit your
+          details, change your password and update your picture here, but not delete your own account.
+        </p>
       </div>
 
       {/* Edit modal */}
@@ -368,8 +348,7 @@ export function DoctorProfilePanel({
             </div>
             {[
               { key: 'email' as const, label: 'Email', type: 'email', required: true },
-              { key: 'hospital' as const, label: 'Hospital or laboratory', type: 'text', required: false },
-              { key: 'specialty' as const, label: 'Specialty', type: 'text', required: false },
+              { key: 'hospital' as const, label: 'Organization / Hospital / Laboratory', type: 'text', required: false },
             ].map((field) => (
               <label key={field.key} className="block">
                 <span className="mb-1 block text-sm font-medium text-foreground">{field.label}</span>
@@ -382,6 +361,32 @@ export function DoctorProfilePanel({
                 />
               </label>
             ))}
+            {profile.role === 'doctor' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-foreground">Specialty</span>
+                  <select
+                    className={FIELD}
+                    required
+                    value={form.specialty}
+                    onChange={(event) => setForm({ ...form, specialty: event.target.value as Specialty })}
+                  >
+                    <option value="" disabled>
+                      Choose a specialty
+                    </option>
+                    {Object.entries(SPECIALTY_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-foreground">Department / Service</span>
+                  <input className={FIELD} type="text" value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} />
+                </label>
+              </div>
+            ) : null}
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-foreground">Phone</span>
               <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
@@ -436,23 +441,6 @@ export function DoctorProfilePanel({
               </button>
             </div>
           </form>
-        </Modal>
-      ) : null}
-
-      {/* Delete confirmation */}
-      {confirmingDelete ? (
-        <Modal title="Delete your account?" onClose={() => setConfirmingDelete(false)}>
-          <p className="text-sm text-foreground/80">
-            This permanently removes your account, your saved reports and every review decision attached to them.
-          </p>
-          <div className="mt-5 flex justify-end gap-2 border-t border-border pt-4">
-            <button type="button" onClick={() => setConfirmingDelete(false)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-              Keep my account
-            </button>
-            <button type="button" onClick={deleteProfile} disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:opacity-60">
-              {loading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Delete permanently
-            </button>
-          </div>
         </Modal>
       ) : null}
     </div>

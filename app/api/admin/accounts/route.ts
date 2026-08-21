@@ -24,10 +24,12 @@ export async function POST(req: NextRequest) {
       lastName: body.lastName,
       email: body.email,
       password: body.password,
+      confirmPassword: body.confirmPassword,
       hospital: body.hospital,
+      department: body.department,
       specialty: body.specialty,
       phone: body.phone,
-      role: body.role === 'admin' ? 'admin' : 'doctor',
+      roleSelection: body.roleSelection,
     });
     return NextResponse.json({ account }, { status: 201 });
   } catch (error) {

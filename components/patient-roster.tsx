@@ -12,7 +12,6 @@ interface Patient {
   firstName: string;
   lastName: string;
   dateOfBirth: string;
-  phone: string;
   notes: string;
   createdAt: string;
 }
@@ -26,7 +25,8 @@ type SortBy = 'recent' | 'name' | 'dateOfBirth' | 'id';
 const FIELD =
   'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 
-const EMPTY_FORM = { firstName: '', lastName: '', dateOfBirth: '', phone: '', notes: '' };
+const EMPTY_FORM = { firstName: '', lastName: '', dateOfBirth: '', notes: '' };
+const TODAY = new Date().toISOString().slice(0, 10);
 
 export function PatientRoster() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -208,24 +208,16 @@ export function PatientRoster() {
                 <input className={FIELD} placeholder="First name" maxLength={100} value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} required />
                 <input className={FIELD} placeholder="Last name" maxLength={100} value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} required />
               </div>
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-foreground">Date of birth</span>
-                <input className={FIELD} type="date" value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} required />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-foreground">Phone (optional)</span>
-                <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                  <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
-                  <input
-                    className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground focus:outline-none"
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={8}
-                    value={form.phone}
-                    onChange={(event) => setForm({ ...form, phone: event.target.value.replace(/\D/g, '').slice(0, 8) })}
-                  />
-                </div>
-              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-foreground">Date of birth</span>
+                  <input className={FIELD} type="date" max={TODAY} value={form.dateOfBirth} onChange={(event) => setForm({ ...form, dateOfBirth: event.target.value })} required />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-foreground">Sex</span>
+                  <input className={`${FIELD} bg-secondary text-foreground/60`} value="Female" disabled />
+                </label>
+              </div>
               <label className="block">
                 <span className="mb-1 block text-sm font-medium text-foreground">Notes (optional)</span>
                 <textarea className="min-h-20 w-full rounded-lg border border-border px-3 py-2 text-sm" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />

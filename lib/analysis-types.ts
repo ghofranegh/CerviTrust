@@ -152,13 +152,73 @@ export interface Analysis {
   analyzedAt?: string;
 }
 
+export type ProfessionalTitle = 'pathologist' | 'cytopathologist' | 'gynecologist' | 'laboratory_physician';
+export type Specialty = 'anatomical_pathology' | 'cytopathology' | 'gynecology' | 'oncology' | 'laboratory_medicine';
+export type SampleType = 'cervical_cytology' | 'pap_smear' | 'biopsy' | 'histology' | 'hpv_sample';
+export type StainingMethod = 'papanicolaou' | 'h_e' | 'other';
+
+export const PROFESSIONAL_TITLE_LABELS: Record<ProfessionalTitle, string> = {
+  pathologist: 'Pathologist',
+  cytopathologist: 'Cytopathologist',
+  gynecologist: 'Gynecologist',
+  laboratory_physician: 'Laboratory Physician',
+};
+
+export const SPECIALTY_LABELS: Record<Specialty, string> = {
+  anatomical_pathology: 'Anatomical Pathology',
+  cytopathology: 'Cytopathology',
+  gynecology: 'Gynecology',
+  oncology: 'Oncology',
+  laboratory_medicine: 'Laboratory Medicine',
+};
+
+export const SAMPLE_TYPE_LABELS: Record<SampleType, string> = {
+  cervical_cytology: 'Cervical Cytology',
+  pap_smear: 'Pap Smear',
+  biopsy: 'Biopsy',
+  histology: 'Histology',
+  hpv_sample: 'HPV Sample',
+};
+
+export const STAINING_METHOD_LABELS: Record<StainingMethod, string> = {
+  papanicolaou: 'Papanicolaou',
+  h_e: 'H&E',
+  other: 'Other',
+};
+
+/** Every option offered by the unified account "role" selector — clinical titles map to a doctor account, "Administrator" maps to an admin account. */
+export const ROLE_SELECT_OPTIONS: Array<{ value: ProfessionalTitle | 'administrator'; label: string }> = [
+  ...(Object.entries(PROFESSIONAL_TITLE_LABELS) as Array<[ProfessionalTitle, string]>).map(([value, label]) => ({ value, label })),
+  { value: 'administrator', label: 'Administrator' },
+];
+
+export function professionalTitleLabel(title?: ProfessionalTitle | null): string {
+  return title ? PROFESSIONAL_TITLE_LABELS[title] : '—';
+}
+
+export function specialtyLabel(specialty?: Specialty | string | null): string {
+  return specialty && specialty in SPECIALTY_LABELS ? SPECIALTY_LABELS[specialty as Specialty] : specialty || '—';
+}
+
+export function sampleTypeLabel(type?: SampleType | string | null): string {
+  return type && type in SAMPLE_TYPE_LABELS ? SAMPLE_TYPE_LABELS[type as SampleType] : type || '—';
+}
+
+export function stainingMethodLabel(method?: StainingMethod | string | null): string {
+  return method && method in STAINING_METHOD_LABELS ? STAINING_METHOD_LABELS[method as StainingMethod] : method || '—';
+}
+
 export interface DoctorProfile {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
   hospital: string;
-  specialty: string;
+  /** Clinical specialty — required for doctor accounts, empty for admins. */
+  specialty: Specialty | '';
+  department: string;
+  /** Professional title shown alongside the name — null for admin accounts. */
+  professionalTitle: ProfessionalTitle | null;
   phone: string;
   role: 'doctor' | 'admin';
   status: 'active' | 'inactive';

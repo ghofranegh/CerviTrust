@@ -49,6 +49,15 @@ export function isValidTunisianPhone(phone: string): boolean {
   return /^\d{8}$/.test(value);
 }
 
+/** A date of birth must be a real calendar date and cannot be in the future. */
+export function isValidDateOfBirth(value: string): boolean {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return false;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() <= Date.now();
+}
+
 /** 8-character, unambiguous, collision-checked patient identifier. */
 export function generatePatientId(existingIds: Iterable<string>): string {
   const existing = new Set(existingIds);

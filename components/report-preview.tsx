@@ -18,6 +18,8 @@ import {
   reportStatusLabel,
   reportStatusTone,
   reviewLabel,
+  sampleTypeLabel,
+  stainingMethodLabel,
   toPercent,
 } from '@/lib/analysis-types';
 import { PatientInfo, ageFrom, patientDisplayName, pseudonymise, studyReference } from '@/lib/report-utils';
@@ -176,6 +178,10 @@ export function ReportPreview({
               <p className="font-medium text-foreground">{patient.sampleId || '—'}</p>
             </div>
             <div>
+              <p className="text-foreground/60">Slide ID</p>
+              <p className="font-medium text-foreground">{patient.slideId || '—'}</p>
+            </div>
+            <div>
               <p className="text-foreground/60">Date of birth</p>
               <p className="font-medium text-foreground">{patient.dateOfBirth || '—'}</p>
             </div>
@@ -184,8 +190,24 @@ export function ReportPreview({
               <p className="font-medium text-foreground">{ageFrom(patient.dateOfBirth)}</p>
             </div>
             <div>
-              <p className="text-foreground/60">Collection date</p>
-              <p className="font-medium text-foreground">{patient.collectionDate || '—'}</p>
+              <p className="text-foreground/60">Sex</p>
+              <p className="font-medium text-foreground">Female</p>
+            </div>
+            <div>
+              <p className="text-foreground/60">Sample type</p>
+              <p className="font-medium text-foreground">{sampleTypeLabel(patient.sampleType)}</p>
+            </div>
+            <div>
+              <p className="text-foreground/60">Anatomical site</p>
+              <p className="font-medium text-foreground">Cervix</p>
+            </div>
+            <div>
+              <p className="text-foreground/60">Staining method</p>
+              <p className="font-medium text-foreground">{stainingMethodLabel(patient.stainingMethod)}</p>
+            </div>
+            <div>
+              <p className="text-foreground/60">Image / Study ID</p>
+              <p className="font-medium text-foreground">{patient.imageStudyId || '—'}</p>
             </div>
           </div>
           <p className="mt-3 flex items-center gap-2 text-xs text-foreground/60">

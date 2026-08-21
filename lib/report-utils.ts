@@ -1,4 +1,4 @@
-import { CellReviewMap, RegionOfInterest, effectiveClass, personName } from '@/lib/analysis-types';
+import { CellReviewMap, RegionOfInterest, SampleType, StainingMethod, effectiveClass, personName } from '@/lib/analysis-types';
 
 export interface PatientInfo {
   patientRecordId: string;
@@ -6,9 +6,15 @@ export interface PatientInfo {
   patientLastName: string;
   patientId: string;
   dateOfBirth: string;
-  collectionDate: string;
+  /** Fixed: cervical cytology screening is female-only anatomy. */
+  sex: 'female';
   sampleId: string;
-  phone: string;
+  slideId: string;
+  sampleType: SampleType | '';
+  /** Fixed. */
+  anatomicalSite: 'cervix';
+  stainingMethod: StainingMethod | '';
+  imageStudyId: string;
   notes: string;
 }
 
@@ -18,9 +24,13 @@ export const EMPTY_PATIENT: PatientInfo = {
   patientLastName: '',
   patientId: '',
   dateOfBirth: '',
-  collectionDate: '',
+  sex: 'female',
   sampleId: '',
-  phone: '',
+  slideId: '',
+  sampleType: '',
+  anatomicalSite: 'cervix',
+  stainingMethod: '',
+  imageStudyId: '',
   notes: '',
 };
 

@@ -1,9 +1,16 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { generatePatientId, isValidEmail, isValidPersonName, isValidTunisianPhone } from '@/lib/validators';
+import { generatePatientId, isValidDateOfBirth, isValidEmail, isValidPersonName, isValidTunisianPhone } from '@/lib/validators';
 import { sendMail } from '@/lib/mailer';
 import { accountCreatedEmail, passwordResetEmail, reportValidatedEmail } from '@/lib/email-templates';
+import {
+  SPECIALTY_LABELS,
+  type ProfessionalTitle,
+  type Specialty,
+  type SampleType,
+  type StainingMethod,
+} from '@/lib/analysis-types';
 
 export type DoctorRole = 'doctor' | 'admin';
 export type AccountStatus = 'active' | 'inactive';
@@ -15,7 +22,11 @@ export interface DoctorRecord {
   email: string;
   passwordHash: string;
   hospital: string;
-  specialty: string;
+  /** Required for doctor accounts, empty for admins. */
+  specialty: Specialty | '';
+  department: string;
+  /** Professional title shown alongside the name — null for admin accounts. */
+  professionalTitle: ProfessionalTitle | null;
   phone: string;
   role: DoctorRole;
   status: AccountStatus;
@@ -45,7 +56,8 @@ export interface PatientRecord {
   firstName: string;
   lastName: string;
   dateOfBirth: string;
-  phone: string;
+  /** Fixed: cervical cytology screening is female-only anatomy. */
+  sex: 'female';
   notes: string;
   doctorId: string;
   createdAt: string;
@@ -67,6 +79,14 @@ export interface SavedAnalysis {
   patientLastName: string;
   patientId: string;
   dateOfBirth: string;
+  patientSex: 'female';
+  /** Sample / specimen details, captured on the report itself. */
+  sampleId: string;
+  slideId: string;
+  sampleType: SampleType | '';
+  anatomicalSite: 'cervix';
+  stainingMethod: StainingMethod | '';
+  imageStudyId: string;
   notes: string;
   assessment: string;
   confidence: number;
@@ -147,6 +167,8 @@ function migrateDoctor(doctor: (DoctorRecord & { fullName?: string }) | Record<s
     role: record.role ?? 'doctor',
     status: record.status ?? 'active',
     avatar: record.avatar ?? '',
+    department: record.department ?? '',
+    professionalTitle: record.professionalTitle ?? null,
     resetToken: record.resetToken ?? null,
     resetTokenExpiresAt: record.resetTokenExpiresAt ?? null,
   };
@@ -165,6 +187,13 @@ function migrateAnalysis(analysis: (SavedAnalysis & { patientName?: string }) | 
     patientFirstName: first,
     patientLastName: last,
     patientRecordId: record.patientRecordId ?? record.patientId ?? '',
+    patientSex: 'female',
+    sampleId: record.sampleId ?? '',
+    slideId: record.slideId ?? '',
+    sampleType: record.sampleType ?? '',
+    anatomicalSite: 'cervix',
+    stainingMethod: record.stainingMethod ?? '',
+    imageStudyId: record.imageStudyId ?? '',
     cellReviews,
     reviewerObservations: record.reviewerObservations ?? '',
     reportStatus: record.reportStatus ?? 'draft',
@@ -263,6 +292,21 @@ function sanitizeString(value: string | undefined): string {
   return (value ?? '').trim();
 }
 
+/**
+ * When an email is shared across accounts (e.g. one person as both a doctor
+ * and an admin), login disambiguates purely by trying the submitted password
+ * against each account sharing that email. If two of those accounts also
+ * shared the same password, that disambiguation breaks — sign-in would only
+ * ever reach whichever account happens to be checked first, making the
+ * other one unreachable. So no two accounts on the same email may ever have
+ * the same password, checked on every create/change.
+ */
+function passwordCollidesWithSibling(store: DoctorStoreData, email: string, excludeId: string, password: string): boolean {
+  return store.doctors.some(
+    (entry) => entry.email === email && entry.id !== excludeId && verifyPassword(password, entry.passwordHash),
+  );
+}
+
 /** Strips credential/reset material before a record is sent to a client. */
 export function publicDoctor<T extends DoctorRecord>(doctor: T): PublicDoctor {
   const { passwordHash: _passwordHash, resetToken: _resetToken, resetTokenExpiresAt: _resetTokenExpiresAt, ...rest } = doctor;
@@ -284,8 +328,8 @@ export async function registerDoctor(input: {
   lastName: string;
   email: string;
   password: string;
+  confirmPassword: string;
   hospital: string;
-  specialty: string;
   phone: string;
 }) {
   const store = await readStore();
@@ -298,7 +342,6 @@ export async function registerDoctor(input: {
   const email = sanitizeString(input.email).toLowerCase();
   const password = sanitizeString(input.password);
   const hospital = sanitizeString(input.hospital);
-  const specialty = sanitizeString(input.specialty);
   const phone = sanitizeString(input.phone);
 
   if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
@@ -309,6 +352,9 @@ export async function registerDoctor(input: {
   }
   if (!password || password.length < 8) {
     throw new Error('Choose a password of at least 8 characters.');
+  }
+  if (password !== sanitizeString(input.confirmPassword)) {
+    throw new Error('Password and confirmation do not match.');
   }
   if (!hospital) {
     throw new Error('Hospital or laboratory is required.');
@@ -325,7 +371,9 @@ export async function registerDoctor(input: {
     email,
     passwordHash: hashPassword(password),
     hospital,
-    specialty,
+    specialty: '',
+    department: '',
+    professionalTitle: null,
     phone,
     role: 'admin',
     status: 'active',
@@ -350,7 +398,13 @@ export async function registerDoctor(input: {
   return { doctor: publicDoctor(doctor), token };
 }
 
-/** Admin-only account creation. The created account is never logged in here. */
+/**
+ * Admin-only account creation. `roleSelection` is the single unified picker
+ * offered in the UI — one of the four clinical titles (which creates a
+ * doctor-permission account carrying that title) or "administrator" (which
+ * creates an admin-permission account with no clinical title). The created
+ * account is never logged in here.
+ */
 export async function createAccount(
   callerId: string,
   input: {
@@ -358,10 +412,12 @@ export async function createAccount(
     lastName: string;
     email: string;
     password: string;
+    confirmPassword: string;
     hospital: string;
+    department: string;
     specialty: string;
     phone: string;
-    role: DoctorRole;
+    roleSelection: ProfessionalTitle | 'administrator';
   },
 ) {
   const store = await readStore();
@@ -375,9 +431,11 @@ export async function createAccount(
   const email = sanitizeString(input.email).toLowerCase();
   const password = sanitizeString(input.password);
   const hospital = sanitizeString(input.hospital);
-  const specialty = sanitizeString(input.specialty);
+  const department = sanitizeString(input.department);
   const phone = sanitizeString(input.phone);
-  const role: DoctorRole = input.role === 'admin' ? 'admin' : 'doctor';
+  const role: DoctorRole = input.roleSelection === 'administrator' ? 'admin' : 'doctor';
+  const professionalTitle: ProfessionalTitle | null = input.roleSelection === 'administrator' ? null : input.roleSelection;
+  const specialty = (sanitizeString(input.specialty) as Specialty | '') || '';
 
   if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
     throw new Error('First and last name must contain letters only (max 100 characters).');
@@ -388,14 +446,23 @@ export async function createAccount(
   if (!password || password.length < 8) {
     throw new Error('Choose a temporary password of at least 8 characters.');
   }
+  if (password !== sanitizeString(input.confirmPassword)) {
+    throw new Error('Password and confirmation do not match.');
+  }
   if (!isValidTunisianPhone(phone)) {
     throw new Error('Phone number must be exactly 8 digits.');
+  }
+  if (role === 'doctor' && !(specialty in SPECIALTY_LABELS)) {
+    throw new Error('Choose a valid specialty.');
   }
   // An email can be reused across roles (e.g. the same person as both a
   // practitioner and an administrator, each with their own password) — but
   // never twice for the same role, which would be ambiguous at login.
   if (store.doctors.some((entry) => entry.email === email && entry.role === role)) {
     throw new Error(`An account already exists with this email for the ${role === 'admin' ? 'administrator' : 'doctor'} role.`);
+  }
+  if (passwordCollidesWithSibling(store, email, '', password)) {
+    throw new Error('This email already has an account using that password. Choose a different password so sign-in can tell the accounts apart.');
   }
 
   const now = new Date().toISOString();
@@ -406,7 +473,9 @@ export async function createAccount(
     email,
     passwordHash: hashPassword(password),
     hospital,
-    specialty,
+    specialty: role === 'doctor' ? specialty : '',
+    department,
+    professionalTitle,
     phone,
     role,
     status: 'active',
@@ -447,10 +516,14 @@ export async function adminUpdateAccount(
     throw new Error('Account not found.');
   }
 
+  const nextRole = updates.role ?? target.role;
   const next: DoctorRecord = {
     ...target,
     status: updates.status ?? target.status,
-    role: updates.role ?? target.role,
+    role: nextRole,
+    // An admin has no clinical title or specialty — clear them on promotion.
+    professionalTitle: nextRole === 'admin' ? null : target.professionalTitle,
+    specialty: nextRole === 'admin' ? '' : target.specialty,
     updatedAt: new Date().toISOString(),
   };
   store.doctors = store.doctors.map((entry) => (entry.id === targetId ? next : entry));
@@ -545,7 +618,9 @@ export interface DoctorUpdate {
   lastName?: string;
   email?: string;
   hospital?: string;
+  /** Clinical specialty — self-editable, but the professional title/role itself is not (admin-managed only). */
   specialty?: string;
+  department?: string;
   phone?: string;
   avatar?: string;
   /** Required by the store whenever `password` is set. */
@@ -582,6 +657,9 @@ export async function updateDoctor(doctorId: string, updates: DoctorUpdate) {
   if (updates.phone !== undefined && !isValidTunisianPhone(updates.phone)) {
     throw new Error('Phone number must be exactly 8 digits.');
   }
+  if (doctor.role === 'doctor' && updates.specialty !== undefined && !(sanitizeString(updates.specialty) in SPECIALTY_LABELS)) {
+    throw new Error('Choose a valid specialty.');
+  }
 
   const email = sanitizeString(updates.email) ? sanitizeString(updates.email).toLowerCase() : doctor.email;
   if (updates.email !== undefined && !isValidEmail(email)) {
@@ -593,6 +671,9 @@ export async function updateDoctor(doctorId: string, updates: DoctorUpdate) {
   ) {
     throw new Error('Another account with this role already uses this email.');
   }
+  if (updates.password && passwordCollidesWithSibling(store, email, doctorId, updates.password)) {
+    throw new Error('This email already has another account using that password. Choose a different password so sign-in can tell the accounts apart.');
+  }
 
   if (updates.avatar && updates.avatar.length > MAX_AVATAR_BYTES) {
     throw new Error('The profile picture is too large. Please choose a smaller image.');
@@ -603,7 +684,8 @@ export async function updateDoctor(doctorId: string, updates: DoctorUpdate) {
     firstName: sanitizeString(updates.firstName) || doctor.firstName,
     lastName: updates.lastName !== undefined ? sanitizeString(updates.lastName) : doctor.lastName,
     hospital: updates.hospital !== undefined ? sanitizeString(updates.hospital) : doctor.hospital,
-    specialty: updates.specialty !== undefined ? sanitizeString(updates.specialty) : doctor.specialty,
+    specialty: (updates.specialty !== undefined ? sanitizeString(updates.specialty) : doctor.specialty) as Specialty | '',
+    department: updates.department !== undefined ? sanitizeString(updates.department) : doctor.department,
     phone: updates.phone !== undefined ? sanitizeString(updates.phone) : doctor.phone,
     avatar: updates.avatar !== undefined ? updates.avatar : doctor.avatar,
     id: doctor.id,
@@ -690,6 +772,9 @@ export async function resetPassword(token: string, newPassword: string): Promise
   if (!doctor || !doctor.resetTokenExpiresAt || new Date(doctor.resetTokenExpiresAt).getTime() < Date.now()) {
     throw new Error('This reset link is invalid or has expired. Request a new one.');
   }
+  if (passwordCollidesWithSibling(store, doctor.email, doctor.id, newPassword)) {
+    throw new Error('This email already has another account using that password. Choose a different password so sign-in can tell the accounts apart.');
+  }
 
   store.doctors = store.doctors.map((entry) =>
     entry.id === doctor.id
@@ -723,12 +808,11 @@ export async function getPatientForDoctor(doctorId: string, patientId: string): 
 
 export async function createPatient(
   doctorId: string,
-  input: { firstName: string; lastName: string; dateOfBirth: string; phone: string; notes: string },
+  input: { firstName: string; lastName: string; dateOfBirth: string; notes: string },
 ): Promise<PatientRecord> {
   const firstName = sanitizeString(input.firstName);
   const lastName = sanitizeString(input.lastName);
   const dateOfBirth = sanitizeString(input.dateOfBirth);
-  const phone = sanitizeString(input.phone);
 
   if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
     throw new Error('First and last name must contain letters only (max 100 characters).');
@@ -736,8 +820,8 @@ export async function createPatient(
   if (!dateOfBirth) {
     throw new Error('Date of birth is required.');
   }
-  if (!isValidTunisianPhone(phone)) {
-    throw new Error('Phone number must be exactly 8 digits.');
+  if (!isValidDateOfBirth(dateOfBirth)) {
+    throw new Error('Date of birth cannot be in the future.');
   }
 
   const store = await readStore();
@@ -746,7 +830,7 @@ export async function createPatient(
     firstName,
     lastName,
     dateOfBirth,
-    phone,
+    sex: 'female',
     notes: sanitizeString(input.notes),
     doctorId,
     createdAt: new Date().toISOString(),
@@ -800,6 +884,13 @@ export async function saveDoctorAnalysis(
     patientLastName: sanitizeString(payload.patientLastName),
     patientId: sanitizeString(payload.patientId),
     dateOfBirth: sanitizeString(payload.dateOfBirth),
+    patientSex: 'female',
+    sampleId: sanitizeString(payload.sampleId),
+    slideId: sanitizeString(payload.slideId),
+    sampleType: (payload.sampleType as SavedAnalysis['sampleType']) ?? '',
+    anatomicalSite: 'cervix',
+    stainingMethod: (payload.stainingMethod as SavedAnalysis['stainingMethod']) ?? '',
+    imageStudyId: sanitizeString(payload.imageStudyId),
     notes: payload.notes ?? '',
     assessment: payload.assessment ?? '',
     confidence: payload.confidence ?? 0,

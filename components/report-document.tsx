@@ -19,7 +19,9 @@ import {
   qualityLabel,
   reportStatusLabel,
   reviewLabel,
+  sampleTypeLabel,
   sortClasses,
+  stainingMethodLabel,
   toPercent,
 } from '@/lib/analysis-types';
 import { personName } from '@/lib/analysis-types';
@@ -105,8 +107,13 @@ export function ReportDocument({
           <Field label="Pseudonymised record" value={pseudonymise(patient.patientId || patientDisplayName(patient))} />
           <Field label="Date of birth" value={patient.dateOfBirth} />
           <Field label="Age" value={ageFrom(patient.dateOfBirth)} />
-          <Field label="Sample / slide ID" value={patient.sampleId} />
-          <Field label="Collection date" value={patient.collectionDate} />
+          <Field label="Sex" value="Female" />
+          <Field label="Sample ID" value={patient.sampleId} />
+          <Field label="Slide ID" value={patient.slideId} />
+          <Field label="Sample type" value={sampleTypeLabel(patient.sampleType)} />
+          <Field label="Anatomical site" value="Cervix" />
+          <Field label="Staining method" value={stainingMethodLabel(patient.stainingMethod)} />
+          <Field label="Image / Study ID" value={patient.imageStudyId} />
           <Field label="Analysis date" value={generatedAt.toLocaleDateString()} />
           <Field label="Report saved" value={savedAt ? new Date(savedAt).toLocaleString() : 'Not saved'} />
         </div>

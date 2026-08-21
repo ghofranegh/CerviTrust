@@ -16,8 +16,8 @@ export async function POST(req: NextRequest) {
       lastName: body.lastName,
       email: body.email,
       password: body.password,
+      confirmPassword: body.confirmPassword,
       hospital: body.hospital,
-      specialty: body.specialty,
       phone: body.phone,
     });
     return NextResponse.json({ doctor, token }, { status: 201 });

@@ -12,7 +12,7 @@ import { CellReviewTable } from '@/components/cell-review-table';
 import { ReportPreview } from '@/components/report-preview';
 import { ReportDocument } from '@/components/report-document';
 import { PatientPicker } from '@/components/patient-picker';
-import { EMPTY_PATIENT, missingPatientFields } from '@/lib/report-utils';
+import { EMPTY_PATIENT, missingPatientFields, type PatientInfo } from '@/lib/report-utils';
 import { DonutChart, MeterBar, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
 import { useAnalysisSession, type TabId } from '@/lib/use-analysis-session';
@@ -20,6 +20,8 @@ import {
   Analysis,
   CellReview,
   DoctorProfile,
+  SAMPLE_TYPE_LABELS,
+  STAINING_METHOD_LABELS,
   TONE_BADGE,
   classMeta,
   formatNumber,
@@ -37,6 +39,9 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'review', label: 'Targeted review' },
   { id: 'report', label: 'Report' },
 ];
+
+const SAMPLE_FIELD =
+  'rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 
 export function ImageAnalyzer({
   doctor,
@@ -130,8 +135,7 @@ export function ImageAnalyzer({
       .then((data) => {
         const record = data.analysis;
         if (!record) return;
-        const { patientInfo: storedPatientInfo, ...analysisRest } = (record.analysisData ?? {}) as Record<string, unknown> & { patientInfo?: Record<string, unknown> };
-        const restoredAnalysis = analysisRest as unknown as Analysis;
+        const restoredAnalysis = (record.analysisData ?? {}) as unknown as Analysis;
 
         setAnalysis(restoredAnalysis);
         setPatientInfo({
@@ -140,9 +144,13 @@ export function ImageAnalyzer({
           patientLastName: record.patientLastName ?? '',
           patientId: record.patientId ?? '',
           dateOfBirth: record.dateOfBirth ?? '',
-          collectionDate: (storedPatientInfo?.collectionDate as string) ?? '',
-          sampleId: (storedPatientInfo?.sampleId as string) ?? '',
-          phone: (storedPatientInfo?.phone as string) ?? '',
+          sex: 'female',
+          sampleId: record.sampleId ?? '',
+          slideId: record.slideId ?? '',
+          sampleType: record.sampleType ?? '',
+          anatomicalSite: 'cervix',
+          stainingMethod: record.stainingMethod ?? '',
+          imageStudyId: record.imageStudyId ?? '',
           notes: record.notes ?? '',
         });
         setCellReviews(record.cellReviews ?? {});
@@ -182,7 +190,6 @@ export function ImageAnalyzer({
           patientLastName: data.patient.lastName,
           patientId: data.patient.id,
           dateOfBirth: data.patient.dateOfBirth,
-          phone: data.patient.phone,
         });
       })
       .catch(() => {});
@@ -344,12 +351,17 @@ export function ImageAnalyzer({
               patientLastName: patientInfo.patientLastName,
               patientId: patientInfo.patientId,
               dateOfBirth: patientInfo.dateOfBirth,
+              sampleId: patientInfo.sampleId,
+              slideId: patientInfo.slideId,
+              sampleType: patientInfo.sampleType,
+              stainingMethod: patientInfo.stainingMethod,
+              imageStudyId: patientInfo.imageStudyId,
               notes: patientInfo.notes,
               assessment: analysis.assessment,
               confidence: analysis.confidence,
               findings: analysis.findings,
               recommendation: analysis.recommendation,
-              analysisData: { ...analysis, patientInfo },
+              analysisData: analysis,
               cellReviews,
               reviewerObservations: observations,
               reportStatus,
@@ -741,21 +753,64 @@ export function ImageAnalyzer({
 
                           <div className="grid gap-4 md:grid-cols-2">
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Collection date</span>
+                              <span className="text-xs font-medium text-foreground/70">Sample ID</span>
                               <input
-                                type="date"
-                                className="rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                value={patientInfo.collectionDate}
-                                onChange={(e) => setPatientInfo({ ...patientInfo, collectionDate: e.target.value })}
+                                type="text"
+                                className={SAMPLE_FIELD}
+                                value={patientInfo.sampleId}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, sampleId: e.target.value })}
                               />
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Sample / slide ID</span>
+                              <span className="text-xs font-medium text-foreground/70">Slide ID</span>
                               <input
                                 type="text"
-                                className="rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                value={patientInfo.sampleId}
-                                onChange={(e) => setPatientInfo({ ...patientInfo, sampleId: e.target.value })}
+                                className={SAMPLE_FIELD}
+                                value={patientInfo.slideId}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, slideId: e.target.value })}
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Sample type</span>
+                              <select
+                                className={SAMPLE_FIELD}
+                                value={patientInfo.sampleType}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, sampleType: e.target.value as PatientInfo['sampleType'] })}
+                              >
+                                <option value="">Not specified</option>
+                                {Object.entries(SAMPLE_TYPE_LABELS).map(([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Staining method</span>
+                              <select
+                                className={SAMPLE_FIELD}
+                                value={patientInfo.stainingMethod}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, stainingMethod: e.target.value as PatientInfo['stainingMethod'] })}
+                              >
+                                <option value="">Not specified</option>
+                                {Object.entries(STAINING_METHOD_LABELS).map(([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Anatomical site</span>
+                              <input type="text" className={`${SAMPLE_FIELD} bg-secondary text-foreground/60`} value="Cervix" disabled />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs font-medium text-foreground/70">Image / Study ID</span>
+                              <input
+                                type="text"
+                                className={SAMPLE_FIELD}
+                                value={patientInfo.imageStudyId}
+                                onChange={(e) => setPatientInfo({ ...patientInfo, imageStudyId: e.target.value })}
                               />
                             </label>
 

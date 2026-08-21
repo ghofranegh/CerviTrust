@@ -20,10 +20,18 @@ import { AuthGate } from '@/components/auth-gate';
 import { DonutChart, StatTile, TrendChart, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
 import {
+  Analysis,
+  CellReviewMap,
   DoctorProfile,
+  ProfessionalTitle,
+  ROLE_SELECT_OPTIONS,
+  SPECIALTY_LABELS,
+  Specialty,
   TONE_BADGE,
   classMeta,
   personName,
+  qualityLabel,
+  qualityTone,
   reportStatusLabel,
   reportStatusTone,
   priorityLabel,
@@ -42,6 +50,27 @@ interface ReportRow {
   qualityScore: number | null;
   createdAt: string;
   doctorName: string;
+}
+
+interface PreviewReport {
+  id: string;
+  patientFirstName: string;
+  patientLastName: string;
+  patientId: string;
+  dateOfBirth: string;
+  notes: string;
+  assessment: string;
+  confidence: number;
+  findings: string;
+  recommendation: string;
+  analysisData: Analysis & Record<string, unknown>;
+  cellReviews: CellReviewMap;
+  reviewerObservations: string;
+  reportStatus: 'draft' | 'in_review' | 'validated';
+  qualityScore: number | null;
+  cellsDetected: number;
+  cellsReviewed: number;
+  createdAt: string;
 }
 
 interface AdminStats {
@@ -73,10 +102,12 @@ const EMPTY_ACCOUNT_FORM = {
   lastName: '',
   email: '',
   password: '',
+  confirmPassword: '',
   hospital: '',
-  specialty: '',
+  department: '',
+  specialty: '' as Specialty | '',
   phone: '',
-  role: 'doctor' as 'doctor' | 'admin',
+  roleSelection: 'pathologist' as ProfessionalTitle | 'administrator',
 };
 
 interface InferenceHealth {
@@ -131,6 +162,9 @@ function AdminContent({ selfId }: { selfId: string }) {
   const [accountSaving, setAccountSaving] = useState(false);
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
   const [busyReportId, setBusyReportId] = useState<string | null>(null);
+  const [previewReportId, setPreviewReportId] = useState<string | null>(null);
+  const [previewReport, setPreviewReport] = useState<PreviewReport | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   async function loadStats() {
     const token = getStoredDoctorToken();
@@ -162,6 +196,10 @@ function AdminContent({ selfId }: { selfId: string }) {
   async function handleCreateAccount(event: FormEvent) {
     event.preventDefault();
     setAccountError('');
+    if (accountForm.password !== accountForm.confirmPassword) {
+      setAccountError('Password and confirmation do not match.');
+      return;
+    }
     setAccountSaving(true);
     try {
       const token = getStoredDoctorToken();
@@ -225,9 +263,25 @@ function AdminContent({ selfId }: { selfId: string }) {
         headers: { 'Content-Type': 'application/json', 'x-doctor-token': token ?? '' },
         body: JSON.stringify({ reportStatus: 'validated' }),
       });
+      setPreviewReportId(null);
+      setPreviewReport(null);
       await loadStats();
     } finally {
       setBusyReportId(null);
+    }
+  }
+
+  async function openPreview(id: string) {
+    setPreviewReportId(id);
+    setPreviewReport(null);
+    setPreviewLoading(true);
+    try {
+      const token = getStoredDoctorToken();
+      const res = await fetch(`/api/analyses/${id}`, { headers: { 'x-doctor-token': token ?? '' } });
+      const data = await res.json();
+      if (res.ok) setPreviewReport(data.analysis);
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -490,9 +544,10 @@ function AdminContent({ selfId }: { selfId: string }) {
               </div>
 
               <div className="rounded-lg border border-border bg-white p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-4">Audit log</h2>
+                <h2 className="text-lg font-semibold text-foreground mb-1">Audit log</h2>
+                <p className="text-sm text-foreground/60 mb-4">Showing 5 at a time — scroll for more.</p>
                 {stats.events.length ? (
-                  <ul className="space-y-3">
+                  <ul className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
                     {stats.events.map((event) => (
                       <li key={event.id} className="flex items-start justify-between gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
                         <div className="min-w-0">
@@ -530,7 +585,12 @@ function AdminContent({ selfId }: { selfId: string }) {
                   </thead>
                   <tbody>
                     {stats.awaitingValidation.map((report) => (
-                      <tr key={report.id} className="border-b border-border last:border-0">
+                      <tr
+                        key={report.id}
+                        onClick={() => openPreview(report.id)}
+                        className="cursor-pointer border-b border-border last:border-0 hover:bg-secondary/40"
+                        title="Preview this report before validating"
+                      >
                         <td className="py-2 pr-4">
                           <p className="font-medium text-foreground">{personName({ firstName: report.patientFirstName, lastName: report.patientLastName }, 'Unnamed patient')}</p>
                           <p className="text-xs text-foreground/60">{report.patientId || '—'}</p>
@@ -546,7 +606,10 @@ function AdminContent({ selfId }: { selfId: string }) {
                           <button
                             type="button"
                             disabled={busyReportId === report.id}
-                            onClick={() => handleValidateReport(report.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleValidateReport(report.id);
+                            }}
                             className="inline-flex items-center gap-1.5 rounded-md bg-status-success px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
                           >
                             {busyReportId === report.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Validate
@@ -568,8 +631,9 @@ function AdminContent({ selfId }: { selfId: string }) {
 
             {/* Recent reports */}
             <div className="rounded-lg border border-border bg-white p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Recent reports</h2>
-              <div className="overflow-x-auto">
+              <h2 className="text-lg font-semibold text-foreground mb-1">Recent reports</h2>
+              <p className="text-sm text-foreground/60 mb-4">Showing 5 at a time — scroll for more. Click a row to preview.</p>
+              <div className="max-h-[360px] overflow-y-auto overflow-x-auto">
                 <table className="w-full min-w-[760px] text-sm">
                   <thead>
                     <tr className="border-b border-border text-left">
@@ -585,7 +649,7 @@ function AdminContent({ selfId }: { selfId: string }) {
                   </thead>
                   <tbody>
                     {stats.recentReports.map((report) => (
-                      <tr key={report.id} className="border-b border-border last:border-0">
+                      <tr key={report.id} onClick={() => openPreview(report.id)} className="cursor-pointer border-b border-border last:border-0 hover:bg-secondary/40">
                         <td className="py-2 pr-4">
                           <p className="font-medium text-foreground">{personName({ firstName: report.patientFirstName, lastName: report.patientLastName }, 'Unnamed patient')}</p>
                           <p className="text-xs text-foreground/60">{report.patientId || '—'}</p>
@@ -636,46 +700,67 @@ function AdminContent({ selfId }: { selfId: string }) {
               </button>
             </div>
             <form onSubmit={handleCreateAccount} className="space-y-4 px-6 py-5">
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
-                    { value: 'doctor', label: 'Doctor / Biologist' },
-                    { value: 'admin', label: 'Administrator' },
-                  ] as const
-                ).map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setAccountForm({ ...accountForm, role: option.value })}
-                    className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                      accountForm.role === option.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-foreground">Role</span>
+                <select
+                  className={FIELD}
+                  value={accountForm.roleSelection}
+                  onChange={(event) =>
+                    setAccountForm({
+                      ...accountForm,
+                      roleSelection: event.target.value as ProfessionalTitle | 'administrator',
+                      specialty: event.target.value === 'administrator' ? '' : accountForm.specialty,
+                    })
+                  }
+                >
+                  {ROLE_SELECT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <input className={FIELD} placeholder="First name" maxLength={100} value={accountForm.firstName} onChange={(event) => setAccountForm({ ...accountForm, firstName: event.target.value })} required />
                 <input className={FIELD} placeholder="Last name" maxLength={100} value={accountForm.lastName} onChange={(event) => setAccountForm({ ...accountForm, lastName: event.target.value })} required />
               </div>
-              <input className={FIELD} type="email" placeholder="Email address" maxLength={320} value={accountForm.email} onChange={(event) => setAccountForm({ ...accountForm, email: event.target.value })} required />
-              <input className={FIELD} type="password" placeholder="Temporary password" minLength={8} value={accountForm.password} onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })} required />
-              <input className={FIELD} placeholder="Hospital or laboratory" value={accountForm.hospital} onChange={(event) => setAccountForm({ ...accountForm, hospital: event.target.value })} />
+              <input className={FIELD} type="email" placeholder="Professional email address" maxLength={320} value={accountForm.email} onChange={(event) => setAccountForm({ ...accountForm, email: event.target.value })} required />
               <div className="grid grid-cols-2 gap-3">
-                <input className={FIELD} placeholder="Specialty" value={accountForm.specialty} onChange={(event) => setAccountForm({ ...accountForm, specialty: event.target.value })} />
-                <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-                  <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
-                  <input
-                    className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground focus:outline-none"
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={8}
-                    placeholder="Phone"
-                    value={accountForm.phone}
-                    onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value.replace(/\D/g, '').slice(0, 8) })}
-                  />
+                <input className={FIELD} type="password" placeholder="Temporary password" minLength={8} value={accountForm.password} onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })} required />
+                <input className={FIELD} type="password" placeholder="Confirm password" minLength={8} value={accountForm.confirmPassword} onChange={(event) => setAccountForm({ ...accountForm, confirmPassword: event.target.value })} required />
+              </div>
+              <input className={FIELD} placeholder="Organization / Hospital / Laboratory" value={accountForm.hospital} onChange={(event) => setAccountForm({ ...accountForm, hospital: event.target.value })} />
+              {accountForm.roleSelection !== 'administrator' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    className={FIELD}
+                    value={accountForm.specialty}
+                    onChange={(event) => setAccountForm({ ...accountForm, specialty: event.target.value as Specialty })}
+                    required
+                  >
+                    <option value="" disabled>
+                      Choose a specialty
+                    </option>
+                    {Object.entries(SPECIALTY_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <input className={FIELD} placeholder="Department / Service" value={accountForm.department} onChange={(event) => setAccountForm({ ...accountForm, department: event.target.value })} />
                 </div>
+              ) : null}
+              <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
+                <input
+                  className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground focus:outline-none"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={8}
+                  placeholder="Phone (optional)"
+                  value={accountForm.phone}
+                  onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value.replace(/\D/g, '').slice(0, 8) })}
+                />
               </div>
 
               {accountError ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{accountError}</p> : null}
@@ -689,6 +774,103 @@ function AdminContent({ selfId }: { selfId: string }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {previewReportId ? (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4" onClick={() => setPreviewReportId(null)}>
+          <div className="my-8 w-full max-w-3xl rounded-xl border border-border bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            {previewLoading || !previewReport ? (
+              <div className="flex items-center justify-center py-16 text-foreground/60">
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
+                  <div>
+                    <h3 className="text-xl font-semibold text-foreground">
+                      {personName({ firstName: previewReport.patientFirstName, lastName: previewReport.patientLastName }, 'Unnamed patient')}
+                    </h3>
+                    <p className="text-sm text-foreground/60">
+                      Patient ID: {previewReport.patientId || '—'} • DOB: {previewReport.dateOfBirth || '—'} • Saved{' '}
+                      {new Date(previewReport.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button type="button" className="text-sm text-foreground/70 hover:text-foreground" onClick={() => setPreviewReportId(null)}>
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${TONE_BADGE[classMeta(previewReport.assessment).tone]}`}>
+                    {classMeta(previewReport.assessment).label}
+                  </span>
+                  <span className={`rounded-md border px-2 py-1 text-xs font-medium ${TONE_BADGE[reportStatusTone(previewReport.reportStatus)]}`}>
+                    {reportStatusLabel(previewReport.reportStatus)}
+                  </span>
+                  <span className={`rounded-md border px-2 py-1 text-xs font-medium ${TONE_BADGE[qualityTone(previewReport.analysisData?.quality?.label)]}`}>
+                    {qualityLabel(previewReport.analysisData?.quality?.label)}
+                  </span>
+                  <span className="text-sm text-foreground/70 tabular-nums">{previewReport.confidence}% confidence</span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                    <p className="text-xs text-foreground/60">Quality score</p>
+                    <p className="text-lg font-semibold text-foreground tabular-nums">{previewReport.qualityScore ?? '—'}/100</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                    <p className="text-xs text-foreground/60">Cells detected</p>
+                    <p className="text-lg font-semibold text-foreground tabular-nums">{previewReport.cellsDetected}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                    <p className="text-xs text-foreground/60">Cells reviewed</p>
+                    <p className="text-lg font-semibold text-foreground tabular-nums">{previewReport.cellsReviewed}</p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-secondary/30 p-3">
+                    <p className="text-xs text-foreground/60">Reviewed cells</p>
+                    <p className="text-lg font-semibold text-foreground tabular-nums">
+                      {Object.values(previewReport.cellReviews ?? {}).filter((review) => review.decision !== 'pending').length} / {Object.keys(previewReport.cellReviews ?? {}).length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2 text-sm text-foreground/70">
+                  <p>
+                    <span className="font-semibold text-foreground">Findings:</span> {previewReport.findings}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-foreground">Recommendation:</span> {previewReport.recommendation}
+                  </p>
+                  {previewReport.reviewerObservations ? (
+                    <p>
+                      <span className="font-semibold text-foreground">Reviewer observations:</span> {previewReport.reviewerObservations}
+                    </p>
+                  ) : null}
+                  {previewReport.notes ? (
+                    <p>
+                      <span className="font-semibold text-foreground">Clinical notes:</span> {previewReport.notes}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
+                  <button type="button" onClick={() => setPreviewReportId(null)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    disabled={previewReport.reportStatus === 'validated' || busyReportId === previewReport.id}
+                    onClick={() => handleValidateReport(previewReport.id)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-status-success px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {busyReportId === previewReport.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                    {previewReport.reportStatus === 'validated' ? 'Already validated' : 'Validate report'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}

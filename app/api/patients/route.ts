@@ -35,7 +35,6 @@ export async function POST(req: NextRequest) {
       firstName: body.firstName,
       lastName: body.lastName,
       dateOfBirth: body.dateOfBirth,
-      phone: body.phone,
       notes: body.notes,
     });
     return NextResponse.json({ patient }, { status: 201 });
