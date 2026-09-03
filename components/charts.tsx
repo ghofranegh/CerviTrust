@@ -8,6 +8,7 @@
  */
 
 import { ReactNode, useState } from 'react';
+import { useTranslation } from '@/lib/i18n';
 
 /** Ordinal severity ramp: benign -> malignant. */
 export const CLASS_COLORS: Record<string, string> = {
@@ -283,6 +284,7 @@ export function TrendChart({
   series: TrendSeries[];
   height?: number;
 }) {
+  const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 640;
   const padding = { top: 12, right: 16, bottom: 26, left: 34 };
@@ -308,7 +310,7 @@ export function TrendChart({
           style={{ height }}
           onMouseLeave={() => setActiveIndex(null)}
           role="img"
-          aria-label="Activity over time"
+          aria-label={t('common.activityOverTime')}
         >
           {ticks.map((tick) => (
             <g key={tick}>

@@ -6,18 +6,22 @@ import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, LogOut, Menu, Settings, X } from 'lucide-react';
 import Image from 'next/image';
 import { Avatar } from '@/components/avatar';
+import { LanguageToggle } from '@/components/language-toggle';
 import { useDoctorSession } from '@/lib/use-doctor-session';
+import { useTranslation } from '@/lib/i18n';
 import { personName, professionalTitleLabel } from '@/lib/analysis-types';
 
-function roleLabel(doctor: { role: 'doctor' | 'admin'; professionalTitle?: string | null }): string {
-  if (doctor.role === 'admin') return 'Administrator';
-  return professionalTitleLabel(doctor.professionalTitle as never) !== '—' ? professionalTitleLabel(doctor.professionalTitle as never) : 'Practitioner';
+function roleLabel(doctor: { role: 'doctor' | 'admin'; professionalTitle?: string | null }, lang: 'en' | 'fr'): string {
+  if (doctor.role === 'admin') return lang === 'fr' ? 'Administrateur' : 'Administrator';
+  const title = professionalTitleLabel(doctor.professionalTitle as never, lang);
+  return title !== '—' ? title : lang === 'fr' ? 'Praticien' : 'Practitioner';
 }
 
 export function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { doctor, signOut } = useDoctorSession();
+  const { t, language } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -25,21 +29,21 @@ export function Navigation() {
   const links = doctor
     ? doctor.role === 'admin'
       ? [
-          { href: '/admin', label: 'Administration' },
-          { href: '/system', label: 'System Overview' },
-          { href: '/about', label: 'About' },
+          { href: '/admin', label: t('nav.administration') },
+          { href: '/system', label: t('nav.systemOverview') },
+          { href: '/about', label: t('nav.about') },
         ]
       : [
-          { href: '/', label: 'Patients' },
-          { href: '/analysis', label: 'Analysis' },
-          { href: '/dashboard', label: 'Dashboard' },
-          { href: '/saved-reports', label: 'Saved Reports' },
-          { href: '/system', label: 'System Overview' },
-          { href: '/about', label: 'About' },
+          { href: '/', label: t('nav.patients') },
+          { href: '/analysis', label: t('nav.analysis') },
+          { href: '/dashboard', label: t('nav.dashboard') },
+          { href: '/saved-reports', label: t('nav.savedReports') },
+          { href: '/system', label: t('nav.systemOverview') },
+          { href: '/about', label: t('nav.about') },
         ]
     : [
-        { href: '/system', label: 'System Overview' },
-        { href: '/about', label: 'About' },
+        { href: '/system', label: t('nav.systemOverview') },
+        { href: '/about', label: t('nav.about') },
       ];
 
   useEffect(() => {
@@ -69,7 +73,7 @@ export function Navigation() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <Link href="/" className="flex items-center gap-3">
-            <Image src="/logo.png" alt="CerviTrust Logo" width={40} height={40} className="h-10 w-10 object-contain flex-shrink-0" />
+            <Image src="/logo.png" alt="CerviTrust Logo" width={56} height={56} className="h-14 w-14 object-contain flex-shrink-0" />
             <span className="text-xl font-semibold text-foreground">CerviTrust</span>
           </Link>
 
@@ -79,6 +83,8 @@ export function Navigation() {
                 {link.label}
               </Link>
             ))}
+
+            <LanguageToggle className="ml-2" />
 
             {doctor ? (
               <div className="relative ml-2" ref={menuRef}>
@@ -100,17 +106,17 @@ export function Navigation() {
                       <div className="min-w-0">
                         <p className="truncate font-medium text-foreground">{personName(doctor)}</p>
                         <p className="truncate text-xs text-foreground/60">
-                          {roleLabel(doctor)}
+                          {roleLabel(doctor, language)}
                         </p>
                       </div>
                     </div>
                     {doctor.role === 'doctor' ? (
                       <Link href="/dashboard" className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary" role="menuitem">
-                        <LayoutDashboard size={16} /> Dashboard
+                        <LayoutDashboard size={16} /> {t('nav.dashboard')}
                       </Link>
                     ) : null}
                     <Link href="/doctor" className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary" role="menuitem">
-                      <Settings size={16} /> Account settings
+                      <Settings size={16} /> {t('nav.accountSettings')}
                     </Link>
                     <button
                       type="button"
@@ -118,19 +124,19 @@ export function Navigation() {
                       className="flex w-full items-center gap-3 border-t border-border px-4 py-2.5 text-left text-sm text-foreground/80 hover:bg-secondary"
                       role="menuitem"
                     >
-                      <LogOut size={16} /> Sign out
+                      <LogOut size={16} /> {t('nav.signOut')}
                     </button>
                   </div>
                 ) : null}
               </div>
             ) : (
               <Link href="/" className="ml-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90">
-                Sign in
+                {t('nav.signIn')}
               </Link>
             )}
           </div>
 
-          <button className="lg:hidden p-2" onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
+          <button className="lg:hidden p-2" onClick={() => setIsOpen(!isOpen)} aria-label={t('common.toggleMenu')}>
             {isOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
@@ -148,6 +154,10 @@ export function Navigation() {
               </Link>
             ))}
 
+            <div className="mt-2 px-4">
+              <LanguageToggle />
+            </div>
+
             {doctor ? (
               <>
                 <Link href="/doctor" className="mt-2 flex items-center gap-3 rounded-lg border border-border bg-secondary/50 px-4 py-3 text-sm font-medium" onClick={() => setIsOpen(false)}>
@@ -155,17 +165,17 @@ export function Navigation() {
                   <span className="min-w-0">
                     <span className="block truncate">{personName(doctor)}</span>
                     <span className="block text-xs text-foreground/60">
-                      {roleLabel(doctor)}
+                      {roleLabel(doctor, language)}
                     </span>
                   </span>
                 </Link>
                 <button type="button" onClick={handleSignOut} className="mt-2 flex w-full items-center gap-3 rounded-lg border border-border px-4 py-3 text-left text-sm font-medium text-foreground/80">
-                  <LogOut size={16} /> Sign out
+                  <LogOut size={16} /> {t('nav.signOut')}
                 </button>
               </>
             ) : (
               <Link href="/" className="mt-2 block rounded-lg bg-primary px-4 py-3 text-center text-sm font-medium text-white" onClick={() => setIsOpen(false)}>
-                Sign in
+                {t('nav.signIn')}
               </Link>
             )}
           </div>

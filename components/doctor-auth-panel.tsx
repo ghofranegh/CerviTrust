@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { translateError, useTranslation } from '@/lib/i18n';
 import type { DoctorProfile } from '@/lib/analysis-types';
 
 const FIELD =
@@ -10,12 +11,13 @@ const FIELD =
 
 /** Grey, non-editable "+216" prefix next to an 8-digit-only phone input. */
 function PhoneField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
       <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
       <input
         className="w-full min-w-0 flex-1 px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:outline-none"
-        placeholder="Phone (optional)"
+        placeholder={t('auth.phoneOptional')}
         type="tel"
         inputMode="numeric"
         maxLength={8}
@@ -33,6 +35,7 @@ export function DoctorAuthPanel({
   onAuthenticated?: (doctor: DoctorProfile, token: string) => void;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -65,10 +68,10 @@ export function DoctorAuthPanel({
 
     try {
       if (needsBootstrap && form.password.length < 8) {
-        throw new Error('Choose a password of at least 8 characters.');
+        throw new Error(t('auth.passwordTooShort'));
       }
       if (needsBootstrap && form.password !== form.confirmPassword) {
-        throw new Error('Password and confirmation do not match.');
+        throw new Error(t('admin.passwordMismatch'));
       }
 
       const endpoint = needsBootstrap ? '/api/auth/signup' : '/api/auth/login';
@@ -78,10 +81,10 @@ export function DoctorAuthPanel({
         body: JSON.stringify(needsBootstrap ? form : { email: form.email, password: form.password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Authentication failed');
+      if (!res.ok) throw new Error(translateError(data.error, t) || t('error.authenticationFailed'));
       onAuthenticated?.(data.doctor, data.token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to continue');
+      setError(err instanceof Error ? err.message : t('auth.unableToContinue'));
     } finally {
       setLoading(false);
     }
@@ -98,12 +101,8 @@ export function DoctorAuthPanel({
   return (
     <div className={`rounded-xl border border-border bg-white shadow-sm ${compact ? 'p-6' : 'p-6 md:p-8'}`}>
       <div className="mb-5">
-        <h2 className="text-2xl font-semibold text-foreground">{needsBootstrap ? 'Set up your platform' : 'Sign in'}</h2>
-        <p className="mt-1 text-sm text-foreground/60">
-          {needsBootstrap
-            ? 'No account exists yet — create the first administrator account to get started.'
-            : 'Access your screening workspace, reports and dashboard.'}
-        </p>
+        <h2 className="text-2xl font-semibold text-foreground">{needsBootstrap ? t('auth.setupTitle') : t('auth.signInTitle')}</h2>
+        <p className="mt-1 text-sm text-foreground/60">{needsBootstrap ? t('auth.setupSubtitle') : t('auth.signInSubtitle')}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
@@ -112,7 +111,7 @@ export function DoctorAuthPanel({
             <div className="grid gap-3 sm:grid-cols-2">
               <input
                 className={FIELD}
-                placeholder="First name"
+                placeholder={t('auth.firstName')}
                 value={form.firstName}
                 onChange={(event) => update({ firstName: event.target.value })}
                 maxLength={100}
@@ -120,7 +119,7 @@ export function DoctorAuthPanel({
               />
               <input
                 className={FIELD}
-                placeholder="Last name"
+                placeholder={t('auth.lastName')}
                 value={form.lastName}
                 onChange={(event) => update({ lastName: event.target.value })}
                 maxLength={100}
@@ -128,7 +127,7 @@ export function DoctorAuthPanel({
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <input className={FIELD} placeholder="Organization / Hospital / Laboratory" value={form.hospital} onChange={(event) => update({ hospital: event.target.value })} required />
+              <input className={FIELD} placeholder={t('auth.organization')} value={form.hospital} onChange={(event) => update({ hospital: event.target.value })} required />
               <PhoneField value={form.phone} onChange={(value) => update({ phone: value })} />
             </div>
           </>
@@ -136,7 +135,7 @@ export function DoctorAuthPanel({
 
         <input
           className={FIELD}
-          placeholder="Email address"
+          placeholder={t('auth.email')}
           type="email"
           autoComplete="email"
           value={form.email}
@@ -148,7 +147,7 @@ export function DoctorAuthPanel({
         <div className="relative">
           <input
             className={`${FIELD} pr-11`}
-            placeholder="Password"
+            placeholder={t('auth.password')}
             type={showPassword ? 'text' : 'password'}
             autoComplete={needsBootstrap ? 'new-password' : 'current-password'}
             value={form.password}
@@ -168,7 +167,7 @@ export function DoctorAuthPanel({
         {needsBootstrap ? (
           <input
             className={FIELD}
-            placeholder="Confirm password"
+            placeholder={t('auth.confirmPassword')}
             type={showPassword ? 'text' : 'password'}
             autoComplete="new-password"
             value={form.confirmPassword}
@@ -180,7 +179,7 @@ export function DoctorAuthPanel({
         {!needsBootstrap ? (
           <div className="text-right">
             <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
-              Forgot password?
+              {t('auth.forgotPassword')}
             </Link>
           </div>
         ) : null}
@@ -197,14 +196,12 @@ export function DoctorAuthPanel({
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-          {loading ? 'Please wait…' : needsBootstrap ? 'Create administrator account' : 'Sign in'}
+          {loading ? t('auth.pleaseWait') : needsBootstrap ? t('auth.createAdminButton') : t('auth.signInButton')}
         </button>
       </form>
 
       {!needsBootstrap ? (
-        <p className="mt-5 border-t border-border pt-5 text-center text-sm text-foreground/60">
-          Accounts are created by an administrator — contact yours if you don&apos;t have one yet.
-        </p>
+        <p className="mt-5 border-t border-border pt-5 text-center text-sm text-foreground/60">{t('auth.contactAdmin')}</p>
       ) : null}
     </div>
   );

@@ -1,28 +1,32 @@
+'use client';
+
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
 import { Target, Eye, Shield } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
 
 export default function AboutPage() {
+  const { t } = useTranslation();
   return (
     <main className="min-h-screen flex flex-col bg-background">
       <Navigation />
 
       <section className="flex-1 py-12 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full">
         <div className="mb-12">
-          <h1 className="text-4xl font-semibold text-foreground mb-4">About CerviTrust</h1>
+          <h1 className="text-4xl font-semibold text-foreground mb-4">{t('about.title')}</h1>
           <p className="text-lg text-foreground/60">
-            Clinical decision support for cervical cytology screening
+            {t('about.subtitle')}
           </p>
         </div>
 
         {/* Project Overview */}
         <div className="bg-white rounded-lg border border-border p-8 mb-12">
-          <h2 className="text-2xl font-semibold text-foreground mb-6">Project Overview</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-6">{t('about.overviewTitle')}</h2>
           <p className="text-foreground/70 leading-relaxed mb-4">
-            CerviTrust is a research-oriented clinical decision support platform designed to assist healthcare professionals in cervical cytology screening. By analyzing microscopic cervical cell images, the system helps identify potentially abnormal cellular patterns, highlights relevant image regions, and provides structured screening support.
+            {t('about.overviewP1')}
           </p>
           <p className="text-foreground/70 leading-relaxed">
-            The platform is intended to improve workflow efficiency and assist specialists in prioritizing cases requiring detailed examination. Final diagnosis always remains the responsibility of qualified medical professionals.
+            {t('about.overviewP2')}
           </p>
         </div>
 
@@ -35,11 +39,11 @@ export default function AboutPage() {
                 <Target size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-foreground">Mission</h3>
+                <h3 className="text-xl font-semibold text-foreground">{t('about.missionTitle')}</h3>
               </div>
             </div>
             <p className="text-foreground/70 leading-relaxed">
-              To provide healthcare professionals with intelligent, reliable clinical decision support tools that enhance cervical cytology screening efficiency while maintaining the highest standards of medical professionalism and patient care.
+              {t('about.missionBody')}
             </p>
           </div>
 
@@ -50,25 +54,25 @@ export default function AboutPage() {
                 <Eye size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-foreground">Vision</h3>
+                <h3 className="text-xl font-semibold text-foreground">{t('about.visionTitle')}</h3>
               </div>
             </div>
             <p className="text-foreground/70 leading-relaxed">
-              To enable pathology laboratories worldwide to deliver more efficient and consistent cervical cytology screening while supporting early detection of abnormalities and improving clinical outcomes.
+              {t('about.visionBody')}
             </p>
           </div>
         </div>
 
         {/* Core Principles */}
         <div className="mb-12">
-          <h2 className="text-2xl font-semibold text-foreground mb-6">Core Principles</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-6">{t('about.principlesTitle')}</h2>
           <div className="space-y-4">
             <div className="bg-white rounded-lg border border-border p-6 flex items-start gap-4">
               <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Clinical Reliability</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('about.principle1Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  All recommendations are grounded in clinical evidence and designed to support, not replace, professional medical judgment.
+                  {t('about.principle1Desc')}
                 </p>
               </div>
             </div>
@@ -76,9 +80,9 @@ export default function AboutPage() {
             <div className="bg-white rounded-lg border border-border p-6 flex items-start gap-4">
               <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Professional Respect</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('about.principle2Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  The system is designed as a tool for qualified healthcare professionals, with full transparency about capabilities and limitations.
+                  {t('about.principle2Desc')}
                 </p>
               </div>
             </div>
@@ -86,9 +90,9 @@ export default function AboutPage() {
             <div className="bg-white rounded-lg border border-border p-6 flex items-start gap-4">
               <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Simplicity & Clarity</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('about.principle3Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  Medical concepts are presented clearly and professionally, without unnecessary technical jargon or AI hype.
+                  {t('about.principle3Desc')}
                 </p>
               </div>
             </div>
@@ -96,9 +100,9 @@ export default function AboutPage() {
             <div className="bg-white rounded-lg border border-border p-6 flex items-start gap-4">
               <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Continuous Improvement</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('about.principle4Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  The system benefits from ongoing research, clinical feedback, and refinement to serve healthcare professionals better.
+                  {t('about.principle4Desc')}
                 </p>
               </div>
             </div>
@@ -112,26 +116,26 @@ export default function AboutPage() {
               <Shield size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-foreground mb-3">Clinical Disclaimer</h2>
+              <h2 className="text-xl font-semibold text-foreground mb-3">{t('about.disclaimerTitle')}</h2>
               <p className="text-foreground/70 leading-relaxed mb-3">
-                <strong>CerviTrust is intended as a clinical decision support tool and is NOT a replacement for professional medical diagnosis.</strong>
+                <strong>{t('about.disclaimerBold')}</strong>
               </p>
               <ul className="space-y-2 text-sm text-foreground/70">
                 <li className="flex gap-2">
                   <span>•</span>
-                  <span>All final diagnostic decisions must be made by qualified medical professionals.</span>
+                  <span>{t('about.disclaimerItem1')}</span>
                 </li>
                 <li className="flex gap-2">
                   <span>•</span>
-                  <span>The system should be used within institutional clinical settings and protocols.</span>
+                  <span>{t('about.disclaimerItem2')}</span>
                 </li>
                 <li className="flex gap-2">
                   <span>•</span>
-                  <span>Healthcare professionals retain full responsibility for patient care and diagnostic interpretation.</span>
+                  <span>{t('about.disclaimerItem3')}</span>
                 </li>
                 <li className="flex gap-2">
                   <span>•</span>
-                  <span>Use of this platform must comply with applicable medical regulations and institutional policies.</span>
+                  <span>{t('about.disclaimerItem4')}</span>
                 </li>
               </ul>
             </div>
@@ -140,12 +144,12 @@ export default function AboutPage() {
 
         {/* Research Use */}
         <div className="bg-white rounded-lg border border-border p-8">
-          <h2 className="text-2xl font-semibold text-foreground mb-4">Research & Development</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-4">{t('about.researchTitle')}</h2>
           <p className="text-foreground/70 leading-relaxed mb-4">
-            CerviTrust was developed as a research platform to advance understanding of digital pathology and clinical decision support. The platform continues to evolve through collaboration with clinical partners and ongoing research initiatives.
+            {t('about.researchP1')}
           </p>
           <p className="text-foreground/70 leading-relaxed">
-            We welcome feedback from healthcare professionals and researchers interested in advancing cervical cytology screening through technology. Inquiries regarding research partnerships or clinical collaboration are encouraged.
+            {t('about.researchP2')}
           </p>
         </div>
       </section>

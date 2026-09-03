@@ -6,11 +6,13 @@ import { FormEvent, Suspense, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
+import { translateError, useTranslation } from '@/lib/i18n';
 
 const FIELD =
   'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 
 function ResetPasswordForm() {
+  const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token') ?? '';
@@ -24,7 +26,7 @@ function ResetPasswordForm() {
     event.preventDefault();
     setError('');
     if (password !== confirmPassword) {
-      setError('The two passwords do not match.');
+      setError(t('reset.passwordMismatch'));
       return;
     }
     setLoading(true);
@@ -35,39 +37,39 @@ function ResetPasswordForm() {
         body: JSON.stringify({ token, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to reset password');
+      if (!res.ok) throw new Error(translateError(data.error, t) || t('reset.unableToReset'));
       setDone(true);
       setTimeout(() => router.push('/'), 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to reset password');
+      setError(err instanceof Error ? err.message : t('reset.unableToReset'));
     } finally {
       setLoading(false);
     }
   }
 
   if (!token) {
-    return <p className="text-sm text-destructive">This reset link is invalid. Request a new one from the sign-in page.</p>;
+    return <p className="text-sm text-destructive">{t('reset.invalidLink')}</p>;
   }
 
   if (done) {
     return (
       <div className="text-center">
         <Check size={32} className="mx-auto mb-3 text-status-success" />
-        <h1 className="text-2xl font-semibold text-foreground">Password updated</h1>
-        <p className="mt-2 text-sm text-foreground/60">Redirecting you to sign in…</p>
+        <h1 className="text-2xl font-semibold text-foreground">{t('reset.updated')}</h1>
+        <p className="mt-2 text-sm text-foreground/60">{t('reset.redirecting')}</p>
       </div>
     );
   }
 
   return (
     <>
-      <h1 className="text-2xl font-semibold text-foreground">Choose a new password</h1>
-      <p className="mt-1 text-sm text-foreground/60">At least 8 characters.</p>
+      <h1 className="text-2xl font-semibold text-foreground">{t('reset.title')}</h1>
+      <p className="mt-1 text-sm text-foreground/60">{t('reset.subtitle')}</p>
       <form onSubmit={handleSubmit} className="mt-5 space-y-3">
         <input
           className={FIELD}
           type="password"
-          placeholder="New password"
+          placeholder={t('reset.newPassword')}
           autoComplete="new-password"
           minLength={8}
           value={password}
@@ -77,7 +79,7 @@ function ResetPasswordForm() {
         <input
           className={FIELD}
           type="password"
-          placeholder="Confirm new password"
+          placeholder={t('reset.confirmNewPassword')}
           autoComplete="new-password"
           value={confirmPassword}
           onChange={(event) => setConfirmPassword(event.target.value)}
@@ -94,11 +96,11 @@ function ResetPasswordForm() {
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
         >
           {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-          {loading ? 'Updating…' : 'Update password'}
+          {loading ? t('reset.updating') : t('reset.updateButton')}
         </button>
       </form>
       <Link href="/" className="mt-4 block text-center text-sm text-foreground/60 hover:text-foreground">
-        Back to sign in
+        {t('forgot.backToSignIn')}
       </Link>
     </>
   );

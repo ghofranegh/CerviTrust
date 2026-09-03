@@ -8,11 +8,13 @@ import { Footer } from '@/components/footer';
 import { AuthLanding } from '@/components/auth-landing';
 import { PatientRoster } from '@/components/patient-roster';
 import { useDoctorSession } from '@/lib/use-doctor-session';
+import { useTranslation } from '@/lib/i18n';
 import type { DoctorProfile } from '@/lib/analysis-types';
 
 export default function Home() {
   const { doctor, loading, signIn } = useDoctorSession();
   const router = useRouter();
+  const { t } = useTranslation();
 
   // Administrators don't have a patient roster — they land on the console.
   useEffect(() => {
@@ -52,9 +54,11 @@ export default function Home() {
 
       <section className="flex-1 py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         <div className="mb-8">
-          <p className="text-sm font-medium text-primary mb-1">Welcome back, {doctor.firstName}</p>
-          <h1 className="text-3xl font-semibold text-foreground">Your patients</h1>
-          <p className="mt-1 text-foreground/60">Find an existing patient or add a new one to start an analysis.</p>
+          <p className="text-sm font-medium text-primary mb-1">
+            {t('roster.welcome')}, {doctor.firstName}
+          </p>
+          <h1 className="text-3xl font-semibold text-foreground">{t('roster.title')}</h1>
+          <p className="mt-1 text-foreground/60">{t('roster.subtitle')}</p>
         </div>
 
         <PatientRoster />

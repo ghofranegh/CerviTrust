@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Check, Flag, Pencil, X } from 'lucide-react';
 import { classColor } from '@/components/charts';
 import { CellZoomModal } from '@/components/cell-zoom-modal';
+import { useTranslation } from '@/lib/i18n';
 import {
   CellReview,
   CellReviewMap,
@@ -44,6 +45,7 @@ export function CellReviewTable({
   onSelect?: (id: number) => void;
   selectedId?: number | null;
 }) {
+  const { t, language } = useTranslation();
   const [classFilter, setClassFilter] = useState<ClassFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -110,11 +112,8 @@ export function CellReviewTable({
   if (!regions.length) {
     return (
       <div className="rounded-lg border border-border bg-secondary/30 p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-1">Targeted review</h3>
-        <p className="text-sm text-foreground/70">
-          No individual cell was isolated on this field, so there is nothing to confirm one by one. The whole-image
-          classification above remains available for review.
-        </p>
+        <h3 className="text-lg font-semibold text-foreground mb-1">{t('review.title')}</h3>
+        <p className="text-sm text-foreground/70">{t('review.noCellsText')}</p>
       </div>
     );
   }
@@ -123,15 +122,12 @@ export function CellReviewTable({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-foreground">Classification and targeted review</h3>
-          <p className="text-sm text-foreground/60">
-            Every detected cell is listed with its calibrated probability. Confirm, correct or flag each one — your
-            decisions are stored with the report.
-          </p>
+          <h3 className="text-lg font-semibold text-foreground">{t('review.classifyTitle')}</h3>
+          <p className="text-sm text-foreground/60">{t('review.classifySubtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-foreground/70 tabular-nums">
-            {summary.reviewed} / {regions.length} reviewed
+            {t('review.reviewedCount', { reviewed: summary.reviewed, total: regions.length })}
           </span>
           <button
             type="button"
@@ -139,7 +135,7 @@ export function CellReviewTable({
             disabled={summary.pending === 0}
             className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary disabled:opacity-40"
           >
-            Confirm all shown
+            {t('review.confirmAllShown')}
           </button>
         </div>
       </div>
@@ -147,45 +143,45 @@ export function CellReviewTable({
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">Predicted class</span>
+          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">{t('review.predictedClass')}</span>
           <select className={SELECT_CLASS} value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
-            <option value="all">All classes</option>
+            <option value="all">{t('review.allClasses')}</option>
             {sortClasses(availableClasses).map((name) => (
               <option key={name} value={name.toUpperCase()}>
-                {classMeta(name).label}
+                {classMeta(name, language).label}
               </option>
             ))}
           </select>
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">Confidence</span>
+          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">{t('review.confidence')}</span>
           <select className={SELECT_CLASS} value={confidenceFilter} onChange={(e) => setConfidenceFilter(e.target.value as ConfidenceFilter)}>
-            <option value="all">All levels</option>
-            <option value="high">High (≥ 85%)</option>
-            <option value="medium">Medium (60–85%)</option>
-            <option value="low">Low (&lt; 60%)</option>
+            <option value="all">{t('review.allLevels')}</option>
+            <option value="high">{t('review.highThreshold')}</option>
+            <option value="medium">{t('review.mediumThreshold')}</option>
+            <option value="low">{t('review.lowThreshold')}</option>
           </select>
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">Priority</span>
+          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">{t('review.priority')}</span>
           <select className={SELECT_CLASS} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as PriorityFilter)}>
-            <option value="all">All priorities</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
+            <option value="all">{t('review.allPriorities')}</option>
+            <option value="high">{priorityLabel('high', language)}</option>
+            <option value="medium">{priorityLabel('medium', language)}</option>
+            <option value="low">{priorityLabel('low', language)}</option>
           </select>
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">Review status</span>
+          <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">{t('review.reviewStatus')}</span>
           <select className={SELECT_CLASS} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
-            <option value="all">All statuses</option>
-            <option value="pending">To review</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="corrected">Corrected</option>
-            <option value="flagged">Flagged</option>
+            <option value="all">{t('review.allStatuses')}</option>
+            <option value="pending">{t('review.toReview')}</option>
+            <option value="confirmed">{t('review.confirmedOpt')}</option>
+            <option value="corrected">{t('review.correctedOpt')}</option>
+            <option value="flagged">{t('review.flaggedOpt')}</option>
           </select>
         </label>
 
@@ -199,17 +195,17 @@ export function CellReviewTable({
             setConfidenceFilter('all');
           }}
         >
-          Reset filters
+          {t('review.resetFilters')}
         </button>
       </div>
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Cells detected', value: regions.length },
-          { label: 'Abnormal (≥ LSIL)', value: summary.abnormal },
-          { label: 'High priority', value: summary.highPriority },
-          { label: 'Still to review', value: summary.pending },
+          { label: t('review.cellsDetected'), value: regions.length },
+          { label: t('review.abnormalLsil'), value: summary.abnormal },
+          { label: t('review.highPriority'), value: summary.highPriority },
+          { label: t('review.stillToReview'), value: summary.pending },
         ].map((item) => (
           <div key={item.label} className="rounded-lg border border-border bg-secondary/30 p-4">
             <p className="text-xs text-foreground/60">{item.label}</p>
@@ -225,12 +221,12 @@ export function CellReviewTable({
           <thead>
             <tr className="border-b border-border bg-secondary/40 text-left">
               <th className="px-4 py-3 font-semibold text-foreground/70">#</th>
-              <th className="px-4 py-3 font-semibold text-foreground/70">Preview</th>
-              <th className="px-4 py-3 font-semibold text-foreground/70">Predicted class</th>
-              <th className="px-4 py-3 font-semibold text-foreground/70">Calibrated probability</th>
-              <th className="px-4 py-3 font-semibold text-foreground/70">Priority</th>
-              <th className="px-4 py-3 font-semibold text-foreground/70">Review status</th>
-              <th className="px-4 py-3 font-semibold text-foreground/70">Decision</th>
+              <th className="px-4 py-3 font-semibold text-foreground/70">{t('review.preview')}</th>
+              <th className="px-4 py-3 font-semibold text-foreground/70">{t('review.predictedClass')}</th>
+              <th className="px-4 py-3 font-semibold text-foreground/70">{t('review.calibratedProbability')}</th>
+              <th className="px-4 py-3 font-semibold text-foreground/70">{t('review.priority')}</th>
+              <th className="px-4 py-3 font-semibold text-foreground/70">{t('review.reviewStatus')}</th>
+              <th className="px-4 py-3 font-semibold text-foreground/70">{t('review.decision')}</th>
             </tr>
           </thead>
           <tbody>
@@ -238,7 +234,7 @@ export function CellReviewTable({
               const review = reviews[String(roi.id)];
               const decision = review?.decision ?? 'pending';
               const finalClass = effectiveClass(roi, review);
-              const meta = classMeta(roi.predicted_class);
+              const meta = classMeta(roi.predicted_class, language);
               const isCorrecting = correcting === roi.id;
 
               return (
@@ -248,7 +244,7 @@ export function CellReviewTable({
                 >
                   <td className="px-4 py-3 font-medium text-foreground tabular-nums">{roi.id}</td>
                   <td className="px-4 py-3">
-                    <button type="button" onClick={() => setZoomId(roi.id)} title="Zoom in on this cell">
+                    <button type="button" onClick={() => setZoomId(roi.id)} title={t('common.zoomInCell')}>
                       <img src={`data:image/png;base64,${roi.image}`} alt={`Cell ${roi.id}`} className="h-12 w-12 rounded-md border border-border object-cover" />
                     </button>
                   </td>
@@ -257,7 +253,7 @@ export function CellReviewTable({
                       {meta.label}
                     </span>
                     {finalClass.toUpperCase() !== roi.predicted_class.toUpperCase() ? (
-                      <span className="ml-2 text-xs text-foreground/60">→ {classMeta(finalClass).label}</span>
+                      <span className="ml-2 text-xs text-foreground/60">→ {classMeta(finalClass, language).label}</span>
                     ) : null}
                   </td>
                   <td className="px-4 py-3 min-w-[180px]">
@@ -277,14 +273,14 @@ export function CellReviewTable({
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-md border px-2 py-1 text-xs font-medium ${TONE_BADGE[priorityTone(roi.priority)]}`}
-                      title={roi.review_reasons?.join(' · ') || 'No triage reason recorded'}
+                      title={roi.review_reasons?.join(' · ') || t('review.noTriageReason')}
                     >
-                      {priorityLabel(roi.priority)}
+                      {priorityLabel(roi.priority, language)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-md border px-2 py-1 text-xs font-medium ${TONE_BADGE[reviewTone(decision)]}`}>
-                      {reviewLabel(decision)}
+                      {reviewLabel(decision, language)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -293,13 +289,13 @@ export function CellReviewTable({
                         <select className={`${SELECT_CLASS} w-full`} value={correctionClass} onChange={(e) => setCorrectionClass(e.target.value)}>
                           {sortClasses(availableClasses).map((name) => (
                             <option key={name} value={name}>
-                              {classMeta(name).label} — {classMeta(name).fullLabel}
+                              {classMeta(name, language).label} — {classMeta(name, language).fullLabel}
                             </option>
                           ))}
                         </select>
                         <input
                           className="w-full rounded-lg border border-border px-3 py-1.5 text-sm"
-                          placeholder="Reason (optional)"
+                          placeholder={t('review.reasonOptional')}
                           value={correctionNote}
                           onChange={(e) => setCorrectionNote(e.target.value)}
                         />
@@ -309,10 +305,10 @@ export function CellReviewTable({
                             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white"
                             onClick={() => applyDecision(roi.id, 'corrected', correctionClass, correctionNote)}
                           >
-                            Save correction
+                            {t('review.saveCorrection')}
                           </button>
                           <button type="button" className="rounded-md border border-border px-3 py-1.5 text-xs" onClick={() => setCorrecting(null)}>
-                            Cancel
+                            {t('common.cancel')}
                           </button>
                         </div>
                       </div>
@@ -325,7 +321,7 @@ export function CellReviewTable({
                             decision === 'confirmed' ? 'bg-primary text-white' : 'border border-border text-foreground/80 hover:bg-secondary'
                           }`}
                         >
-                          <Check size={13} /> Confirm
+                          <Check size={13} /> {t('review.confirm')}
                         </button>
                         <button
                           type="button"
@@ -334,7 +330,7 @@ export function CellReviewTable({
                             decision === 'corrected' ? 'bg-status-warning/15 text-status-warning border border-status-warning/30' : 'border border-border text-foreground/80 hover:bg-secondary'
                           }`}
                         >
-                          <Pencil size={13} /> Correct
+                          <Pencil size={13} /> {t('review.correct')}
                         </button>
                         <button
                           type="button"
@@ -343,21 +339,21 @@ export function CellReviewTable({
                             decision === 'flagged' ? 'bg-status-critical/15 text-status-critical border border-status-critical/30' : 'border border-border text-foreground/80 hover:bg-secondary'
                           }`}
                         >
-                          <Flag size={13} /> Flag
+                          <Flag size={13} /> {t('review.flag')}
                         </button>
                         {decision !== 'pending' ? (
                           <button
                             type="button"
                             onClick={() => applyDecision(roi.id, 'pending')}
                             className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-foreground/50 hover:text-foreground"
-                            title="Clear this decision"
+                            title={t('review.clearDecision')}
                           >
                             <X size={13} />
                           </button>
                         ) : null}
                       </div>
                     )}
-                    {review?.note ? <p className="mt-1 text-xs text-foreground/60">Note: {review.note}</p> : null}
+                    {review?.note ? <p className="mt-1 text-xs text-foreground/60">{t('review.note')}: {review.note}</p> : null}
                   </td>
                 </tr>
               );
@@ -365,7 +361,7 @@ export function CellReviewTable({
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-6 text-center text-sm text-foreground/60">
-                  No cell matches the current filters.
+                  {t('review.noMatch')}
                 </td>
               </tr>
             ) : null}
@@ -375,22 +371,22 @@ export function CellReviewTable({
 
       {priorityCases.length > 0 ? (
         <div className="rounded-lg border border-border bg-white p-6">
-          <h4 className="font-semibold text-foreground mb-1">Priority cases ({priorityCases.length})</h4>
-          <p className="text-sm text-foreground/60 mb-4">Cells the triage rules put at the top of the review queue.</p>
+          <h4 className="font-semibold text-foreground mb-1">{t('review.priorityCases')} ({priorityCases.length})</h4>
+          <p className="text-sm text-foreground/60 mb-4">{t('review.priorityCasesSubtitle')}</p>
           <ul className="space-y-2">
             {priorityCases.map((roi) => (
               <li key={roi.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
                 <span className="flex items-center gap-3">
                   <span className="font-medium text-foreground tabular-nums">#{roi.id}</span>
-                  <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(roi.predicted_class).tone]}`}>
-                    {classMeta(roi.predicted_class).label}
+                  <span className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(roi.predicted_class, language).tone]}`}>
+                    {classMeta(roi.predicted_class, language).label}
                   </span>
                   <span className="text-sm text-foreground/70 tabular-nums">{toPercent(roi.confidence, 2)}</span>
                 </span>
                 <span className="flex items-center gap-3">
-                  <span className="text-xs text-foreground/60">{roi.review_reasons?.[0] ?? 'Flagged by triage'}</span>
+                  <span className="text-xs text-foreground/60">{roi.review_reasons?.[0] ?? t('review.flaggedByTriage')}</span>
                   <button type="button" className="rounded-md border border-border px-3 py-1 text-xs text-foreground/80 hover:bg-secondary" onClick={() => onSelect?.(roi.id)}>
-                    View
+                    {t('review.view')}
                   </button>
                 </span>
               </li>

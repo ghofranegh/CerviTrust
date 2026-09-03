@@ -8,6 +8,7 @@ import { Footer } from '@/components/footer';
 import { AuthGate } from '@/components/auth-gate';
 import { BarDistribution, DonutChart, StatTile, TrendChart, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
+import { useTranslation } from '@/lib/i18n';
 import {
   DoctorProfile,
   ReportStatus,
@@ -49,11 +50,12 @@ function recentDays(count: number): string[] {
 }
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   return (
     <AuthGate
       doctorOnly
-      headline="Sign in to open your dashboard"
-      message="Your screening activity, review queue and quality trends live behind your account."
+      headline={t('gate.dashboardHeadline')}
+      message={t('gate.dashboardMessage')}
     >
       {(doctor) => <DashboardContent doctor={doctor} />}
     </AuthGate>
@@ -61,6 +63,7 @@ export default function DashboardPage() {
 }
 
 function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
+  const { t } = useTranslation();
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -158,7 +161,7 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
           const rank = (priority: string) => (priority === 'high' ? 0 : priority === 'medium' ? 1 : 2);
           return rank(a.priority) - rank(b.priority) || b.createdAt.localeCompare(a.createdAt);
         })
-        .slice(0, 6),
+        .slice(0, 20),
     [reports],
   );
 
@@ -169,40 +172,40 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
       <section className="flex-1 py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-4xl font-semibold text-foreground mb-2">Practitioner dashboard</h1>
+            <h1 className="text-4xl font-semibold text-foreground mb-2">{t('dashboard.title')}</h1>
             <p className="text-foreground/60">
               {personName(doctor)} — {doctor.hospital || 'no site recorded'}
             </p>
           </div>
           <div className="flex gap-2">
             <Link href="/analysis" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90">
-              New analysis
+              {t('dashboard.newAnalysis')}
             </Link>
             <Link href="/saved-reports" className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-              All reports
+              {t('dashboard.allReports')}
             </Link>
           </div>
         </div>
 
         {loading ? (
-          <p className="text-sm text-foreground/60">Loading your activity…</p>
+          <p className="text-sm text-foreground/60">{t('dashboard.loading')}</p>
         ) : (
           <div className="space-y-8">
             {/* KPI row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4">
-              <StatTile label="Reports" value={stats.total} deltaLabel="saved in total" icon={<FileText size={18} />} trend={trend.analysed} />
-              <StatTile label="Validated" value={stats.validated} deltaLabel={`${stats.pending} awaiting validation`} icon={<CheckCircle2 size={18} />} />
-              <StatTile label="High priority" value={stats.highPriority} deltaLabel="flagged by triage" icon={<ShieldAlert size={18} />} />
-              <StatTile label="Cells detected" value={stats.cellsDetected} deltaLabel={`${stats.cellsReviewed} reviewed`} icon={<Microscope size={18} />} />
-              <StatTile label="Mean quality" value={stats.avgQuality ?? '—'} deltaLabel="score / 100" icon={<Activity size={18} />} />
-              <StatTile label="Mean confidence" value={`${stats.avgConfidence}%`} deltaLabel="calibrated probability" icon={<ClipboardList size={18} />} />
+              <StatTile label={t('dashboard.reports')} value={stats.total} deltaLabel="saved in total" icon={<FileText size={18} />} trend={trend.analysed} />
+              <StatTile label={t('dashboard.validated')} value={stats.validated} deltaLabel={`${stats.pending} awaiting validation`} icon={<CheckCircle2 size={18} />} />
+              <StatTile label={t('dashboard.highPriority')} value={stats.highPriority} deltaLabel="flagged by triage" icon={<ShieldAlert size={18} />} />
+              <StatTile label={t('dashboard.cellsDetected')} value={stats.cellsDetected} deltaLabel={`${stats.cellsReviewed} reviewed`} icon={<Microscope size={18} />} />
+              <StatTile label={t('dashboard.meanQuality')} value={stats.avgQuality ?? '—'} deltaLabel="score / 100" icon={<Activity size={18} />} />
+              <StatTile label={t('dashboard.meanConfidence')} value={`${stats.avgConfidence}%`} deltaLabel="calibrated probability" icon={<ClipboardList size={18} />} />
             </div>
 
             {/* Activity + distribution */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               <div className="xl:col-span-2 rounded-lg border border-border bg-white p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-1">Activity — last {DAYS} days</h2>
-                <p className="text-sm text-foreground/60 mb-4">Reports you saved, validated, and those triage marked as high priority.</p>
+                <h2 className="text-lg font-semibold text-foreground mb-1">{t('dashboard.activityTitle')}</h2>
+                <p className="text-sm text-foreground/60 mb-4">{t('dashboard.activitySubtitle')}</p>
                 <TrendChart
                   labels={days.map((day) => day.slice(5))}
                   series={[
@@ -214,12 +217,12 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
               </div>
 
               <div className="rounded-lg border border-border bg-white p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-1">Result distribution</h2>
-                <p className="text-sm text-foreground/60 mb-4">Assessment recorded on each saved report.</p>
+                <h2 className="text-lg font-semibold text-foreground mb-1">{t('dashboard.distributionTitle')}</h2>
+                <p className="text-sm text-foreground/60 mb-4">{t('dashboard.distributionSubtitle')}</p>
                 {distribution.length ? (
                   <DonutChart segments={distribution} centerValue={stats.total} centerLabel="reports" size={160} />
                 ) : (
-                  <p className="text-sm text-foreground/60">No report saved yet.</p>
+                  <p className="text-sm text-foreground/60">{t('dashboard.noReportYet')}</p>
                 )}
               </div>
             </div>
@@ -229,16 +232,16 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
               <div className="xl:col-span-2 rounded-lg border border-border bg-white p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-semibold text-foreground">Review queue ({reviewQueue.length})</h2>
-                    <p className="text-sm text-foreground/60">Reports that are not validated yet, highest priority first.</p>
+                    <h2 className="text-lg font-semibold text-foreground">{t('dashboard.reviewQueue')} ({reviewQueue.length})</h2>
+                    <p className="text-sm text-foreground/60">{t('dashboard.reviewQueueSubtitle')}</p>
                   </div>
                   <Link href="/saved-reports" className="text-sm text-primary hover:underline">
-                    See all
+                    {t('dashboard.seeAll')}
                   </Link>
                 </div>
 
                 {reviewQueue.length ? (
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[320px] overflow-y-auto overflow-x-auto">
                     <table className="w-full min-w-[620px] text-sm">
                       <thead>
                         <tr className="border-b border-border text-left">
@@ -280,13 +283,13 @@ function DashboardContent({ doctor }: { doctor: DoctorProfile }) {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-sm text-foreground/60">Nothing pending — every saved report has been validated.</p>
+                  <p className="text-sm text-foreground/60">{t('dashboard.nothingPending')}</p>
                 )}
               </div>
 
               <div className="rounded-lg border border-border bg-white p-6">
-                <h2 className="text-lg font-semibold text-foreground mb-1">Image quality</h2>
-                <p className="text-sm text-foreground/60 mb-4">Distribution of slide quality scores across your reports.</p>
+                <h2 className="text-lg font-semibold text-foreground mb-1">{t('dashboard.imageQuality')}</h2>
+                <p className="text-sm text-foreground/60 mb-4">{t('dashboard.imageQualitySubtitle')}</p>
                 <BarDistribution bars={qualityBuckets} height={140} />
                 <p className="mt-4 text-xs text-foreground/60">
                   Scores below 45 mark fields that are not reliably interpretable and should be re-acquired.

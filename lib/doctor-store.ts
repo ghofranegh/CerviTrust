@@ -516,6 +516,20 @@ export async function adminUpdateAccount(
     throw new Error('Account not found.');
   }
 
+  // Deactivating (or demoting) the only active admin would lock everyone out
+  // of the administration console.
+  const losesAdminAccess =
+    (updates.status === 'inactive' && target.role === 'admin' && target.status !== 'inactive') ||
+    (updates.role === 'doctor' && target.role === 'admin');
+  if (losesAdminAccess) {
+    const otherActiveAdmins = store.doctors.filter(
+      (entry) => entry.id !== target.id && entry.role === 'admin' && entry.status === 'active',
+    );
+    if (otherActiveAdmins.length === 0) {
+      throw new Error('This is the only active administrator — deactivate or demote another admin first.');
+    }
+  }
+
   const nextRole = updates.role ?? target.role;
   const next: DoctorRecord = {
     ...target,
@@ -842,6 +856,45 @@ export async function createPatient(
   return patient;
 }
 
+/** Edits a patient's own identity fields (name, date of birth, notes) — the owning doctor only. */
+export async function updatePatient(
+  doctorId: string,
+  patientId: string,
+  input: { firstName: string; lastName: string; dateOfBirth: string; notes: string },
+): Promise<PatientRecord> {
+  const store = await readStore();
+  const existing = store.patients.find((entry) => entry.id === patientId && entry.doctorId === doctorId);
+  if (!existing) {
+    throw new Error('Patient not found.');
+  }
+
+  const firstName = sanitizeString(input.firstName);
+  const lastName = sanitizeString(input.lastName);
+  const dateOfBirth = sanitizeString(input.dateOfBirth);
+
+  if (!isValidPersonName(firstName) || !isValidPersonName(lastName)) {
+    throw new Error('First and last name must contain letters only (max 100 characters).');
+  }
+  if (!dateOfBirth) {
+    throw new Error('Date of birth is required.');
+  }
+  if (!isValidDateOfBirth(dateOfBirth)) {
+    throw new Error('Date of birth cannot be in the future.');
+  }
+
+  const next: PatientRecord = {
+    ...existing,
+    firstName,
+    lastName,
+    dateOfBirth,
+    notes: sanitizeString(input.notes),
+    updatedAt: new Date().toISOString(),
+  };
+  store.patients = store.patients.map((entry) => (entry.id === patientId ? next : entry));
+  await writeStore(store);
+  return next;
+}
+
 /* ------------------------------------------------------------------ */
 /* Reports                                                             */
 /* ------------------------------------------------------------------ */
@@ -937,6 +990,18 @@ export async function updateDoctorAnalysis(
   }
   if (existing.doctorId !== doctorId && doctor?.role !== 'admin') {
     throw new Error('This report belongs to another practitioner.');
+  }
+
+  // Validation is an administrator-only decision, and only ever moves a
+  // report out of "in review" — never straight out of "draft", and never
+  // performed by the practitioner who wrote the report.
+  if (updates.reportStatus === 'validated' && existing.reportStatus !== 'validated') {
+    if (doctor?.role !== 'admin') {
+      throw new Error('Only an administrator can validate a report.');
+    }
+    if (existing.reportStatus !== 'in_review') {
+      throw new Error('Only a report marked "In review" can be validated.');
+    }
   }
 
   const now = new Date().toISOString();
@@ -1102,9 +1167,12 @@ export async function getPlatformStats() {
     activity: [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([day, value]) => ({ day, ...value })),
     doctors: doctors.sort((a, b) => (b.lastActivity ?? '').localeCompare(a.lastActivity ?? '')),
     events: store.events.slice(0, 20),
+    // Drafts are a practitioner's in-progress work — an administrator only
+    // ever sees a report once it's been submitted for review or validated.
     recentReports: [...analyses]
+      .filter((analysis) => analysis.reportStatus !== 'draft')
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, 10)
+      .slice(0, 20)
       .map(reportRow),
     awaitingValidation: analyses
       .filter((analysis) => analysis.reportStatus === 'in_review')

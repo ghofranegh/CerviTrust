@@ -16,29 +16,24 @@ import { EMPTY_PATIENT, missingPatientFields, type PatientInfo } from '@/lib/rep
 import { DonutChart, MeterBar, classColor } from '@/components/charts';
 import { getStoredDoctorToken } from '@/lib/client-auth';
 import { useAnalysisSession, type TabId } from '@/lib/use-analysis-session';
+import { translateError, useTranslation } from '@/lib/i18n';
 import {
   Analysis,
   CellReview,
   DoctorProfile,
-  SAMPLE_TYPE_LABELS,
-  STAINING_METHOD_LABELS,
   TONE_BADGE,
   classMeta,
   formatNumber,
   normalizeAssessment,
   priorityLabel,
   priorityTone,
+  sampleTypeOptions,
   sortClasses,
+  stainingMethodOptions,
   toPercent,
 } from '@/lib/analysis-types';
 
-const TABS: Array<{ id: TabId; label: string }> = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'quality', label: 'Quality control' },
-  { id: 'segmentation', label: 'Segmentation' },
-  { id: 'review', label: 'Targeted review' },
-  { id: 'report', label: 'Report' },
-];
+const TAB_IDS: TabId[] = ['overview', 'quality', 'segmentation', 'review', 'report'];
 
 const SAMPLE_FIELD =
   'rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
@@ -85,6 +80,15 @@ export function ImageAnalyzer({
   const setSavedReportId = set('savedReportId');
   const setSavedAt = set('savedAt');
   const setActiveTab = set('activeTab');
+
+  const { t, language } = useTranslation();
+  const TAB_LABELS: Record<TabId, string> = {
+    overview: t('analysis.tabOverview'),
+    quality: t('analysis.tabQuality'),
+    segmentation: t('analysis.tabSegmentation'),
+    review: t('analysis.tabReview'),
+    report: t('analysis.tabReport'),
+  };
 
   const [doctorProfile, setDoctorProfile] = useState<DoctorProfile | null>(doctor ?? null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -167,7 +171,7 @@ export function ImageAnalyzer({
         setActiveTab('report');
       })
       .catch(() => {
-        setSaveMessage({ tone: 'error', text: 'Unable to load this report for editing.' });
+        setSaveMessage({ tone: 'error', text: t('analysis.unableToLoadReport') });
       })
       .finally(() => setLoadingReport(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,7 +233,7 @@ export function ImageAnalyzer({
     try {
       const res = await fetch('/api/analyze', { method: 'POST', body: formData });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Inference failed');
+      if (!res.ok) throw new Error(translateError(data.error, t) || t('error.inferenceFailed'));
 
       const predictedClass: string = data.predicted_class ?? 'NILM';
       const roiList = Array.isArray(data.regions_of_interest) ? data.regions_of_interest : [];
@@ -298,7 +302,7 @@ export function ImageAnalyzer({
       setAnalysisError(
         err instanceof Error && err.message !== 'Failed to fetch'
           ? err.message
-          : 'Unable to reach the inference service. Make sure it is running, then try again.',
+          : t('analysis.unableToReachInference'),
       );
       setStatus('idle');
     }
@@ -373,7 +377,7 @@ export function ImageAnalyzer({
           });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to save report');
+      if (!res.ok) throw new Error(translateError(data.error, t) || t('analysis.unableToSaveReport'));
 
       setSavedReportId(data.analysis.id);
       setSavedAt(data.analysis.updatedAt ?? data.analysis.createdAt);
@@ -382,7 +386,7 @@ export function ImageAnalyzer({
       onSaved?.();
     } catch (err) {
       console.error(err);
-      setSaveMessage({ tone: 'error', text: err instanceof Error ? err.message : 'Unable to save report' });
+      setSaveMessage({ tone: 'error', text: err instanceof Error ? err.message : t('analysis.unableToSaveReport') });
     } finally {
       setSaveLoading(false);
     }
@@ -408,7 +412,7 @@ export function ImageAnalyzer({
         body: JSON.stringify({ cellReviews, reviewerObservations: observations, reportStatus: nextStatus }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to update the report');
+      if (!res.ok) throw new Error(translateError(data.error, t) || t('analysis.unableToUpdateReport'));
 
       setSavedAt(data.analysis.updatedAt);
       setSaveMessage({
@@ -418,7 +422,7 @@ export function ImageAnalyzer({
       onSaved?.();
     } catch (err) {
       setReportStatus(previousStatus);
-      setSaveMessage({ tone: 'error', text: err instanceof Error ? err.message : 'Unable to update the report' });
+      setSaveMessage({ tone: 'error', text: err instanceof Error ? err.message : t('analysis.unableToUpdateReport') });
     } finally {
       setSaveLoading(false);
     }
@@ -453,11 +457,11 @@ export function ImageAnalyzer({
           onClick={() => fileInputRef.current?.click()}
         >
           <Upload size={48} className="mx-auto mb-4 text-foreground/40" />
-          <h3 className="text-lg font-semibold text-foreground mb-2">Upload cervical cytology image</h3>
-          <p className="text-foreground/60 mb-4">Drag and drop your image here, or click to select</p>
+          <h3 className="text-lg font-semibold text-foreground mb-2">{t('analysis.uploadTitle')}</h3>
+          <p className="text-foreground/60 mb-4">{t('analysis.uploadHint')}</p>
           <p className="text-xs text-foreground/50 mb-6">Supported formats: PNG, JPG, TIFF</p>
           <Button size="sm" variant="outline" className="border-foreground/20">
-            Choose file
+            {t('analysis.chooseFile')}
           </Button>
           <input
             ref={fileInputRef}
@@ -474,7 +478,7 @@ export function ImageAnalyzer({
             <div className="lg:col-span-2">
               <div className="bg-white rounded-lg border border-border overflow-hidden">
                 <div className="relative w-full bg-foreground/5">
-                  <Image src={preview} alt="Uploaded cytology image" width={600} height={600} className="w-full h-auto object-cover max-h-96" unoptimized />
+                  <Image src={preview} alt={t('analysis.altUploadedImage')} width={600} height={600} className="w-full h-auto object-cover max-h-96" unoptimized />
                 </div>
 
                 {!analysis ? (
@@ -487,7 +491,7 @@ export function ImageAnalyzer({
                           <span className="ml-2 inline-block animate-bounce">…</span>
                         </>
                       ) : (
-                        'Start analysis'
+                        t('analysis.startAnalysis')
                       )}
                     </Button>
                     <Button onClick={handleClear} variant="outline" size="lg" className="border-foreground/20">
@@ -497,7 +501,7 @@ export function ImageAnalyzer({
                 ) : (
                   <div className="p-6 bg-white border-t border-border flex gap-3">
                     <Button onClick={handleClear} variant="outline" size="lg" className="flex-1 border-foreground/20">
-                      New analysis
+                      {t('analysis.newAnalysis')}
                     </Button>
                   </div>
                 )}
@@ -512,11 +516,11 @@ export function ImageAnalyzer({
             <div className="space-y-4">
               {!analysis ? (
                 <div className="bg-secondary rounded-lg p-6 border border-border">
-                  <h3 className="text-sm font-semibold text-foreground mb-3">Image details</h3>
+                  <h3 className="text-sm font-semibold text-foreground mb-3">{t('analysis.imageDetails')}</h3>
                   <div className="space-y-2 text-xs text-foreground/60">
-                    <p>File: {file?.name}</p>
-                    <p>Size: {(file?.size ? file.size / 1024 / 1024 : 0).toFixed(2)} MB</p>
-                    <p>Ready for analysis</p>
+                    <p>{t('analysis.fileLabel', { name: file?.name ?? '' })}</p>
+                    <p>{t('analysis.sizeLabel', { size: (file?.size ? file.size / 1024 / 1024 : 0).toFixed(2) })}</p>
+                    <p>{t('analysis.readyForAnalysis')}</p>
                   </div>
                 </div>
               ) : (
@@ -530,18 +534,18 @@ export function ImageAnalyzer({
             <div className="bg-white rounded-lg border border-border">
               {/* Tabs */}
               <div className="flex flex-wrap gap-1 border-b border-border p-2 print:hidden">
-                {TABS.map((tab) => (
+                {TAB_IDS.map((tabId) => (
                   <button
-                    key={tab.id}
+                    key={tabId}
                     type="button"
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => setActiveTab(tabId)}
                     className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                      activeTab === tab.id ? 'bg-primary text-white' : 'text-foreground/70 hover:bg-secondary'
+                      activeTab === tabId ? 'bg-primary text-white' : 'text-foreground/70 hover:bg-secondary'
                     }`}
                   >
-                    {tab.label}
-                    {tab.id === 'review' && regions.length ? (
-                      <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] ${activeTab === tab.id ? 'bg-white/20' : 'bg-foreground/10'}`}>
+                    {TAB_LABELS[tabId]}
+                    {tabId === 'review' && regions.length ? (
+                      <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[11px] ${activeTab === tabId ? 'bg-white/20' : 'bg-foreground/10'}`}>
                         {regions.length}
                       </span>
                     ) : null}
@@ -702,7 +706,7 @@ export function ImageAnalyzer({
                   (analysis.quality ? (
                     <QualityControlPanel quality={analysis.quality} segmentationStats={analysis.segmentationStats} imageInfo={analysis.imageInfo} />
                   ) : (
-                    <p className="text-sm text-foreground/60">No quality metrics were returned for this analysis.</p>
+                    <p className="text-sm text-foreground/60">{t('analysis.noQualityMetrics')}</p>
                   ))}
 
                 {activeTab === 'segmentation' && (
@@ -732,15 +736,12 @@ export function ImageAnalyzer({
                     {/* Patient identity — mandatory before the report can be stored */}
                     <div className="space-y-4">
                       <div>
-                        <h3 className="text-lg font-semibold text-foreground">Patient and sample details</h3>
-                        <p className="text-sm text-foreground/60">
-                          Attach a patient from your roster, or register a new one — a report cannot be saved without a
-                          unique patient ID and date of birth.
-                        </p>
+                        <h3 className="text-lg font-semibold text-foreground">{t('analysis.patientSampleDetails')}</h3>
+                        <p className="text-sm text-foreground/60">{t('analysis.attachPatientHint')}</p>
                       </div>
 
                       {!doctorProfile ? (
-                        <p className="text-sm text-foreground/60">Sign in to attach patient details and save this report to your account.</p>
+                        <p className="text-sm text-foreground/60">{t('analysis.signInToAttach')}</p>
                       ) : (
                         <div className="space-y-4">
                           <PatientPicker value={patientInfo} onChange={(next) => {
@@ -748,12 +749,12 @@ export function ImageAnalyzer({
                             setPatientErrors([]);
                           }} />
                           {patientErrors.length ? (
-                            <p className="text-xs text-destructive">Missing: {patientErrors.join(', ')}.</p>
+                            <p className="text-xs text-destructive">{t('analysis.missingFields', { fields: patientErrors.join(', ') })}</p>
                           ) : null}
 
                           <div className="grid gap-4 md:grid-cols-2">
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Sample ID</span>
+                              <span className="text-xs font-medium text-foreground/70">{t('report.sampleId')}</span>
                               <input
                                 type="text"
                                 className={SAMPLE_FIELD}
@@ -762,7 +763,7 @@ export function ImageAnalyzer({
                               />
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Slide ID</span>
+                              <span className="text-xs font-medium text-foreground/70">{t('report.slideId')}</span>
                               <input
                                 type="text"
                                 className={SAMPLE_FIELD}
@@ -771,41 +772,41 @@ export function ImageAnalyzer({
                               />
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Sample type</span>
+                              <span className="text-xs font-medium text-foreground/70">{t('report.sampleType')}</span>
                               <select
                                 className={SAMPLE_FIELD}
                                 value={patientInfo.sampleType}
                                 onChange={(e) => setPatientInfo({ ...patientInfo, sampleType: e.target.value as PatientInfo['sampleType'] })}
                               >
-                                <option value="">Not specified</option>
-                                {Object.entries(SAMPLE_TYPE_LABELS).map(([value, label]) => (
-                                  <option key={value} value={value}>
-                                    {label}
+                                <option value="">{t('common.notSpecified')}</option>
+                                {sampleTypeOptions(language).map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
                                   </option>
                                 ))}
                               </select>
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Staining method</span>
+                              <span className="text-xs font-medium text-foreground/70">{t('report.stainingMethod')}</span>
                               <select
                                 className={SAMPLE_FIELD}
                                 value={patientInfo.stainingMethod}
                                 onChange={(e) => setPatientInfo({ ...patientInfo, stainingMethod: e.target.value as PatientInfo['stainingMethod'] })}
                               >
-                                <option value="">Not specified</option>
-                                {Object.entries(STAINING_METHOD_LABELS).map(([value, label]) => (
-                                  <option key={value} value={value}>
-                                    {label}
+                                <option value="">{t('common.notSpecified')}</option>
+                                {stainingMethodOptions(language).map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
                                   </option>
                                 ))}
                               </select>
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Anatomical site</span>
-                              <input type="text" className={`${SAMPLE_FIELD} bg-secondary text-foreground/60`} value="Cervix" disabled />
+                              <span className="text-xs font-medium text-foreground/70">{t('report.anatomicalSite')}</span>
+                              <input type="text" className={`${SAMPLE_FIELD} bg-secondary text-foreground/60`} value={t('common.cervix')} disabled />
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Image / Study ID</span>
+                              <span className="text-xs font-medium text-foreground/70">{t('report.imageStudyId')}</span>
                               <input
                                 type="text"
                                 className={SAMPLE_FIELD}
@@ -815,10 +816,10 @@ export function ImageAnalyzer({
                             </label>
 
                             <label className="md:col-span-2 flex flex-col gap-1">
-                              <span className="text-xs font-medium text-foreground/70">Clinical notes</span>
+                              <span className="text-xs font-medium text-foreground/70">{t('report.clinicalNotes')}</span>
                               <textarea
                                 className="min-h-20 rounded-lg border border-border px-3 py-2 text-sm"
-                                placeholder="Context, previous results, clinical history…"
+                                placeholder={t('analysis.contextPlaceholder')}
                                 value={patientInfo.notes}
                                 onChange={(e) => setPatientInfo({ ...patientInfo, notes: e.target.value })}
                               />
@@ -826,11 +827,11 @@ export function ImageAnalyzer({
 
                             <div className="md:col-span-2 flex flex-wrap items-center gap-3">
                               <Button onClick={handleSaveAnalysis} disabled={saveLoading}>
-                                {saveLoading ? 'Saving…' : savedReportId ? 'Update saved report' : 'Save report'}
+                                {saveLoading ? t('analysis.saving') : savedReportId ? t('analysis.updateSavedReport') : t('analysis.saveReport')}
                               </Button>
                               {savedReportId ? (
                                 <span className="inline-flex items-center gap-1.5 rounded-md border border-status-success/30 bg-status-success/10 px-2 py-1 text-xs font-medium text-status-success">
-                                  <Check size={13} /> Stored in your reports
+                                  <Check size={13} /> {t('analysis.storedInReports')}
                                 </span>
                               ) : null}
                               {saveMessage ? (
@@ -861,9 +862,7 @@ export function ImageAnalyzer({
 
               <div className="border-t border-border bg-secondary p-6 text-center print:hidden">
                 <p className="text-xs text-foreground/60">
-                  <strong className="text-foreground">Disclaimer:</strong> This assessment is provided as clinical decision
-                  support. Final diagnostic decisions must be made by qualified pathology professionals in accordance with
-                  clinical standards and protocols.
+                  <strong className="text-foreground">{t('analysis.disclaimerLabel')}</strong> {t('analysis.disclaimerText')}
                 </p>
               </div>
             </div>

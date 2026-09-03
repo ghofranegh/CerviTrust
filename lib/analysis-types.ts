@@ -2,7 +2,13 @@
  * Shared shapes for everything the inference backend returns, plus the small
  * helpers used to render it (class metadata, triage tones, formatting).
  * Keep this file in sync with `utils/api.py::predict`.
+ *
+ * Every label helper below takes an optional trailing `lang` ('en' | 'fr',
+ * defaults to 'en') so the same clinical vocabulary renders correctly under
+ * the EN|FR toggle (see lib/i18n.ts) without every caller needing its own
+ * translation table.
  */
+import type { Language } from '@/lib/use-language';
 
 export type ScreeningResult = 'nilm' | 'lsil' | 'hsil';
 export type Priority = 'high' | 'medium' | 'low';
@@ -164,12 +170,27 @@ export const PROFESSIONAL_TITLE_LABELS: Record<ProfessionalTitle, string> = {
   laboratory_physician: 'Laboratory Physician',
 };
 
+const PROFESSIONAL_TITLE_LABELS_FR: Record<ProfessionalTitle, string> = {
+  pathologist: 'Pathologiste',
+  cytopathologist: 'Cytopathologiste',
+  gynecologist: 'Gynécologue',
+  laboratory_physician: 'Médecin de laboratoire',
+};
+
 export const SPECIALTY_LABELS: Record<Specialty, string> = {
   anatomical_pathology: 'Anatomical Pathology',
   cytopathology: 'Cytopathology',
   gynecology: 'Gynecology',
   oncology: 'Oncology',
   laboratory_medicine: 'Laboratory Medicine',
+};
+
+const SPECIALTY_LABELS_FR: Record<Specialty, string> = {
+  anatomical_pathology: 'Anatomopathologie',
+  cytopathology: 'Cytopathologie',
+  gynecology: 'Gynécologie',
+  oncology: 'Oncologie',
+  laboratory_medicine: 'Médecine de laboratoire',
 };
 
 export const SAMPLE_TYPE_LABELS: Record<SampleType, string> = {
@@ -180,32 +201,74 @@ export const SAMPLE_TYPE_LABELS: Record<SampleType, string> = {
   hpv_sample: 'HPV Sample',
 };
 
+const SAMPLE_TYPE_LABELS_FR: Record<SampleType, string> = {
+  cervical_cytology: 'Cytologie cervicale',
+  pap_smear: 'Frottis Pap',
+  biopsy: 'Biopsie',
+  histology: 'Histologie',
+  hpv_sample: 'Échantillon HPV',
+};
+
 export const STAINING_METHOD_LABELS: Record<StainingMethod, string> = {
   papanicolaou: 'Papanicolaou',
   h_e: 'H&E',
   other: 'Other',
 };
 
+const STAINING_METHOD_LABELS_FR: Record<StainingMethod, string> = {
+  papanicolaou: 'Papanicolaou',
+  h_e: 'H&E',
+  other: 'Autre',
+};
+
 /** Every option offered by the unified account "role" selector — clinical titles map to a doctor account, "Administrator" maps to an admin account. */
-export const ROLE_SELECT_OPTIONS: Array<{ value: ProfessionalTitle | 'administrator'; label: string }> = [
-  ...(Object.entries(PROFESSIONAL_TITLE_LABELS) as Array<[ProfessionalTitle, string]>).map(([value, label]) => ({ value, label })),
-  { value: 'administrator', label: 'Administrator' },
-];
-
-export function professionalTitleLabel(title?: ProfessionalTitle | null): string {
-  return title ? PROFESSIONAL_TITLE_LABELS[title] : '—';
+export function roleSelectOptions(lang: Language = 'en'): Array<{ value: ProfessionalTitle | 'administrator'; label: string }> {
+  const titles = lang === 'fr' ? PROFESSIONAL_TITLE_LABELS_FR : PROFESSIONAL_TITLE_LABELS;
+  return [
+    ...(Object.entries(titles) as Array<[ProfessionalTitle, string]>).map(([value, label]) => ({ value, label })),
+    { value: 'administrator' as const, label: lang === 'fr' ? 'Administrateur' : 'Administrator' },
+  ];
 }
 
-export function specialtyLabel(specialty?: Specialty | string | null): string {
-  return specialty && specialty in SPECIALTY_LABELS ? SPECIALTY_LABELS[specialty as Specialty] : specialty || '—';
+/** @deprecated use `roleSelectOptions(language)` so the picker follows the EN|FR toggle. */
+export const ROLE_SELECT_OPTIONS = roleSelectOptions('en');
+
+export function professionalTitleLabel(title?: ProfessionalTitle | null, lang: Language = 'en'): string {
+  if (!title) return '—';
+  return (lang === 'fr' ? PROFESSIONAL_TITLE_LABELS_FR : PROFESSIONAL_TITLE_LABELS)[title];
 }
 
-export function sampleTypeLabel(type?: SampleType | string | null): string {
-  return type && type in SAMPLE_TYPE_LABELS ? SAMPLE_TYPE_LABELS[type as SampleType] : type || '—';
+export function specialtyLabel(specialty?: Specialty | string | null, lang: Language = 'en'): string {
+  if (!specialty || !(specialty in SPECIALTY_LABELS)) return specialty || '—';
+  return (lang === 'fr' ? SPECIALTY_LABELS_FR : SPECIALTY_LABELS)[specialty as Specialty];
 }
 
-export function stainingMethodLabel(method?: StainingMethod | string | null): string {
-  return method && method in STAINING_METHOD_LABELS ? STAINING_METHOD_LABELS[method as StainingMethod] : method || '—';
+/** Specialty dropdown options in the current language. */
+export function specialtyOptions(lang: Language = 'en'): Array<{ value: Specialty; label: string }> {
+  const labels = lang === 'fr' ? SPECIALTY_LABELS_FR : SPECIALTY_LABELS;
+  return (Object.entries(labels) as Array<[Specialty, string]>).map(([value, label]) => ({ value, label }));
+}
+
+/** Sample type dropdown options in the current language. */
+export function sampleTypeOptions(lang: Language = 'en'): Array<{ value: SampleType; label: string }> {
+  const labels = lang === 'fr' ? SAMPLE_TYPE_LABELS_FR : SAMPLE_TYPE_LABELS;
+  return (Object.entries(labels) as Array<[SampleType, string]>).map(([value, label]) => ({ value, label }));
+}
+
+/** Staining method dropdown options in the current language. */
+export function stainingMethodOptions(lang: Language = 'en'): Array<{ value: StainingMethod; label: string }> {
+  const labels = lang === 'fr' ? STAINING_METHOD_LABELS_FR : STAINING_METHOD_LABELS;
+  return (Object.entries(labels) as Array<[StainingMethod, string]>).map(([value, label]) => ({ value, label }));
+}
+
+export function sampleTypeLabel(type?: SampleType | string | null, lang: Language = 'en'): string {
+  if (!type || !(type in SAMPLE_TYPE_LABELS)) return type || '—';
+  return (lang === 'fr' ? SAMPLE_TYPE_LABELS_FR : SAMPLE_TYPE_LABELS)[type as SampleType];
+}
+
+export function stainingMethodLabel(method?: StainingMethod | string | null, lang: Language = 'en'): string {
+  if (!method || !(method in STAINING_METHOD_LABELS)) return method || '—';
+  return (lang === 'fr' ? STAINING_METHOD_LABELS_FR : STAINING_METHOD_LABELS)[method as StainingMethod];
 }
 
 export interface DoctorProfile {
@@ -290,15 +353,29 @@ const CLASS_META: Record<string, ClassMeta> = {
   },
 };
 
-export function classMeta(className: string): ClassMeta {
-  return (
-    CLASS_META[(className ?? '').toUpperCase()] ?? {
+/** Bethesda class acronyms are standard nomenclature and are not translated — only the descriptive text is. */
+const CLASS_FULL_LABEL_FR: Record<string, string> = {
+  NILM: "Négatif pour une lésion intraépithéliale ou une malignité",
+  'ASC-US': 'Cellules squameuses atypiques de signification indéterminée',
+  LSIL: 'Lésion intraépithéliale squameuse de bas grade',
+  'ASC-H': "Cellules squameuses atypiques, ne pouvant exclure une HSIL",
+  AGC: 'Cellules glandulaires atypiques',
+  HSIL: 'Lésion intraépithéliale squameuse de haut grade',
+  SCC: 'Carcinome épidermoïde',
+};
+
+export function classMeta(className: string, lang: Language = 'en'): ClassMeta {
+  const key = (className ?? '').toUpperCase();
+  const base = CLASS_META[key];
+  if (!base) {
+    return {
       label: className || 'Unknown',
-      fullLabel: 'Unrecognised cytological category',
+      fullLabel: lang === 'fr' ? 'Catégorie cytologique non reconnue' : 'Unrecognised cytological category',
       tone: 'neutral',
       severity: 2,
-    }
-  );
+    };
+  }
+  return lang === 'fr' ? { ...base, fullLabel: CLASS_FULL_LABEL_FR[key] ?? base.fullLabel } : base;
 }
 
 /** Bethesda classes ordered from benign to malignant. */
@@ -337,7 +414,13 @@ export function priorityTone(priority?: Priority): Tone {
   return 'neutral';
 }
 
-export function priorityLabel(priority?: Priority): string {
+export function priorityLabel(priority?: Priority, lang: Language = 'en'): string {
+  if (lang === 'fr') {
+    if (priority === 'high') return 'Élevée';
+    if (priority === 'medium') return 'Moyenne';
+    if (priority === 'low') return 'Faible';
+    return 'Non évaluée';
+  }
   if (priority === 'high') return 'High';
   if (priority === 'medium') return 'Medium';
   if (priority === 'low') return 'Low';
@@ -351,7 +434,13 @@ export function qualityTone(label?: QualityLabel): Tone {
   return 'neutral';
 }
 
-export function qualityLabel(label?: QualityLabel): string {
+export function qualityLabel(label?: QualityLabel, lang: Language = 'en'): string {
+  if (lang === 'fr') {
+    if (label === 'interpretable') return 'Interprétable';
+    if (label === 'uncertain') return 'Incertain';
+    if (label === 'not_interpretable') return 'Non interprétable';
+    return 'Non évalué';
+  }
   if (label === 'interpretable') return 'Interpretable';
   if (label === 'uncertain') return 'Uncertain';
   if (label === 'not_interpretable') return 'Not interpretable';
@@ -364,7 +453,12 @@ export function severityTone(severity?: Severity): Tone {
   return 'neutral';
 }
 
-export function severityLabel(severity?: Severity): string {
+export function severityLabel(severity?: Severity, lang: Language = 'en'): string {
+  if (lang === 'fr') {
+    if (severity === 'moderate') return 'Modérée';
+    if (severity === 'mild') return 'Légère';
+    return 'Aucune';
+  }
   if (severity === 'moderate') return 'Moderate';
   if (severity === 'mild') return 'Mild';
   return 'None';
@@ -377,14 +471,25 @@ export function reviewTone(decision: ReviewDecision): Tone {
   return 'neutral';
 }
 
-export function reviewLabel(decision: ReviewDecision): string {
+export function reviewLabel(decision: ReviewDecision, lang: Language = 'en'): string {
+  if (lang === 'fr') {
+    if (decision === 'confirmed') return 'Confirmée';
+    if (decision === 'corrected') return 'Corrigée';
+    if (decision === 'flagged') return 'Signalée';
+    return 'À examiner';
+  }
   if (decision === 'confirmed') return 'Confirmed';
   if (decision === 'corrected') return 'Corrected';
   if (decision === 'flagged') return 'Flagged';
   return 'To review';
 }
 
-export function reportStatusLabel(status: ReportStatus): string {
+export function reportStatusLabel(status: ReportStatus, lang: Language = 'en'): string {
+  if (lang === 'fr') {
+    if (status === 'validated') return 'Validé';
+    if (status === 'in_review') return 'En révision';
+    return 'Brouillon';
+  }
   if (status === 'validated') return 'Validated';
   if (status === 'in_review') return 'In review';
   return 'Draft';

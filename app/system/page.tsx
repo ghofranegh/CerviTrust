@@ -1,51 +1,55 @@
+'use client';
+
 import { Navigation } from '@/components/navigation';
 import { Footer } from '@/components/footer';
 import { MedicalCard } from '@/components/medical-card';
 import { Clock, Image, BookOpen, Package } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
 
 export default function SystemPage() {
+  const { t } = useTranslation();
   return (
     <main className="min-h-screen flex flex-col bg-background">
       <Navigation />
 
       <section className="flex-1 py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         <div className="mb-12">
-          <h1 className="text-4xl font-semibold text-foreground mb-2">System Overview</h1>
+          <h1 className="text-4xl font-semibold text-foreground mb-2">{t('system.title')}</h1>
           <p className="text-foreground/60">
-            Understanding CerviTrust capabilities and clinical workflow support
+            {t('system.subtitle')}
           </p>
         </div>
 
         {/* System Capabilities */}
         <div className="mb-16">
-          <h2 className="text-2xl font-semibold text-foreground mb-8">System Capabilities</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-8">{t('system.capabilitiesTitle')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <MedicalCard
-              label="Response Time"
-              value={<span className="text-primary">2-5 sec</span>}
-              subtitle="Average analysis duration"
+              label={t('system.responseTime')}
+              value={<span className="text-primary">{t('system.responseTimeValue')}</span>}
+              subtitle={t('system.responseTimeSubtitle')}
             />
             <MedicalCard
-              label="Image Types"
-              value={<span className="text-primary">Multiple</span>}
-              subtitle="Supported formats: PNG, JPG, TIFF"
+              label={t('system.imageTypes')}
+              value={<span className="text-primary">{t('system.imageTypesValue')}</span>}
+              subtitle={t('system.imageTypesSubtitle')}
             />
             <MedicalCard
-              label="Classifications"
-              value={<span className="text-primary">3+</span>}
-              subtitle="Bethesda system categories"
+              label={t('system.classifications')}
+              value={<span className="text-primary">{t('system.classificationsValue')}</span>}
+              subtitle={t('system.classificationsSubtitle')}
             />
             <MedicalCard
-              label="Platform"
-              value={<span className="text-primary">Web-based</span>}
-              subtitle="Secure clinical environment"
+              label={t('system.platform')}
+              value={<span className="text-primary">{t('system.platformValue')}</span>}
+              subtitle={t('system.platformSubtitle')}
             />
           </div>
         </div>
 
         {/* Supported Categories */}
         <div className="mb-16">
-          <h2 className="text-2xl font-semibold text-foreground mb-8">Screening Categories</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-8">{t('system.categoriesTitle')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg border border-border p-8">
               <div className="flex items-start gap-4">
@@ -55,7 +59,7 @@ export default function SystemPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">NILM</h3>
                   <p className="text-sm text-foreground/70">
-                    Negative for Intraepithelial Lesion. No significant abnormalities detected.
+                    {t('system.nilmDesc')}
                   </p>
                 </div>
               </div>
@@ -69,7 +73,7 @@ export default function SystemPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">LSIL</h3>
                   <p className="text-sm text-foreground/70">
-                    Low-Grade Squamous Intraepithelial Lesion. Mild cellular abnormalities identified.
+                    {t('system.lsilDesc')}
                   </p>
                 </div>
               </div>
@@ -83,7 +87,7 @@ export default function SystemPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-foreground mb-2">HSIL</h3>
                   <p className="text-sm text-foreground/70">
-                    High-Grade Squamous Intraepithelial Lesion. Significant abnormalities detected.
+                    {t('system.hsilDesc')}
                   </p>
                 </div>
               </div>
@@ -95,9 +99,9 @@ export default function SystemPage() {
                   <span className="text-xl">?</span>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground mb-2">Other</h3>
+                  <h3 className="text-lg font-semibold text-foreground mb-2">{t('system.otherTitle')}</h3>
                   <p className="text-sm text-foreground/70">
-                    Additional categories including ASC, AGUS, or other findings.
+                    {t('system.otherDesc')}
                   </p>
                 </div>
               </div>
@@ -107,16 +111,16 @@ export default function SystemPage() {
 
         {/* Clinical Workflow */}
         <div className="mb-16">
-          <h2 className="text-2xl font-semibold text-foreground mb-8">Clinical Workflow Integration</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-8">{t('system.workflowTitle')}</h2>
           <div className="space-y-4">
             <div className="bg-white rounded-lg border border-border p-6 flex items-start gap-4">
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-primary font-semibold flex-shrink-0 text-sm">
                 1
               </div>
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Image Upload</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('system.step1Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  Healthcare professionals upload cervical cytology images through the secure web interface.
+                  {t('system.step1Desc')}
                 </p>
               </div>
             </div>
@@ -126,9 +130,9 @@ export default function SystemPage() {
                 2
               </div>
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Automated Analysis</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('system.step2Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  The system performs rapid analysis and generates screening recommendations with confidence metrics.
+                  {t('system.step2Desc')}
                 </p>
               </div>
             </div>
@@ -138,9 +142,9 @@ export default function SystemPage() {
                 3
               </div>
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Visual Highlighting</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('system.step3Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  Relevant cellular regions are highlighted to support pathologist review and interpretation.
+                  {t('system.step3Desc')}
                 </p>
               </div>
             </div>
@@ -150,9 +154,9 @@ export default function SystemPage() {
                 4
               </div>
               <div>
-                <h3 className="font-semibold text-foreground mb-1">Professional Review</h3>
+                <h3 className="font-semibold text-foreground mb-1">{t('system.step4Title')}</h3>
                 <p className="text-sm text-foreground/70">
-                  Qualified medical professionals make final diagnostic decisions using the system&apos;s support.
+                  {t('system.step4Desc')}
                 </p>
               </div>
             </div>
@@ -161,21 +165,21 @@ export default function SystemPage() {
 
         {/* Technical Information */}
         <div className="bg-secondary rounded-lg border border-border p-8">
-          <h2 className="text-2xl font-semibold text-foreground mb-6">Technical Information</h2>
+          <h2 className="text-2xl font-semibold text-foreground mb-6">{t('system.technicalInfoTitle')}</h2>
           <p className="text-foreground/70 mb-6 leading-relaxed">
-            CerviTrust has been developed for research and clinical decision support purposes. The platform integrates contemporary image analysis techniques to assist healthcare professionals in cervical cytology screening workflows. The system is designed to improve workflow efficiency and assist specialists in prioritizing cases requiring detailed examination.
+            {t('system.technicalInfoBody')}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-border">
             <div>
-              <h3 className="font-semibold text-foreground mb-2">Research-Oriented</h3>
+              <h3 className="font-semibold text-foreground mb-2">{t('system.researchOrientedTitle')}</h3>
               <p className="text-sm text-foreground/70">
-                Developed to support clinical research and decision support in cervical cytology screening.
+                {t('system.researchOrientedDesc')}
               </p>
             </div>
             <div>
-              <h3 className="font-semibold text-foreground mb-2">Professional Use</h3>
+              <h3 className="font-semibold text-foreground mb-2">{t('system.professionalUseTitle')}</h3>
               <p className="text-sm text-foreground/70">
-                Designed for healthcare professionals within institutional clinical settings.
+                {t('system.professionalUseDesc')}
               </p>
             </div>
           </div>

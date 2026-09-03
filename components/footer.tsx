@@ -1,5 +1,19 @@
+'use client';
+
+import { useTranslation } from '@/lib/i18n';
+
 export function Footer() {
+  const { t } = useTranslation();
   const currentYear = new Date().getFullYear();
+
+  const links = [
+    { href: '/', label: t('nav.home') },
+    { href: '/analysis', label: t('nav.analysis') },
+    { href: '/dashboard', label: t('nav.dashboard') },
+    { href: '/saved-reports', label: t('nav.savedReports') },
+    { href: '/system', label: t('nav.systemOverview') },
+    { href: '/about', label: t('nav.about') },
+  ];
 
   return (
     <footer className="w-full bg-secondary border-t border-border mt-16">
@@ -8,61 +22,34 @@ export function Footer() {
           {/* Company Info */}
           <div>
             <h3 className="text-sm font-semibold text-foreground mb-4">CerviTrust</h3>
-            <p className="text-sm text-foreground/70">
-              Clinical decision support for cervical cytology screening.
-            </p>
+            <p className="text-sm text-foreground/70">{t('footer.tagline')}</p>
           </div>
 
           {/* Quick Links */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">Navigation</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-4">{t('footer.navigation')}</h3>
             <ul className="space-y-2 text-sm">
-              <li>
-                <a href="/" className="text-foreground/70 hover:text-foreground transition-colors">
-                  Home
-                </a>
-              </li>
-              <li>
-                <a href="/analysis" className="text-foreground/70 hover:text-foreground transition-colors">
-                  Analysis
-                </a>
-              </li>
-              <li>
-                <a href="/dashboard" className="text-foreground/70 hover:text-foreground transition-colors">
-                  Dashboard
-                </a>
-              </li>
-              <li>
-                <a href="/saved-reports" className="text-foreground/70 hover:text-foreground transition-colors">
-                  Saved Reports
-                </a>
-              </li>
-              <li>
-                <a href="/system" className="text-foreground/70 hover:text-foreground transition-colors">
-                  System Overview
-                </a>
-              </li>
-              <li>
-                <a href="/about" className="text-foreground/70 hover:text-foreground transition-colors">
-                  About
-                </a>
-              </li>
+              {links.map((link) => (
+                <li key={link.href}>
+                  <a href={link.href} className="text-foreground/70 hover:text-foreground transition-colors">
+                    {link.label}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
 
           {/* Legal */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">Legal</h3>
-            <p className="text-xs text-foreground/70">
-              This software is intended as a clinical decision support tool and is not a replacement for professional medical diagnosis.
-            </p>
+            <h3 className="text-sm font-semibold text-foreground mb-4">{t('footer.legal')}</h3>
+            <p className="text-xs text-foreground/70">{t('footer.legalText')}</p>
           </div>
         </div>
 
         {/* Bottom Bar */}
         <div className="border-t border-border pt-8">
           <p className="text-xs text-foreground/60 text-center">
-            © {currentYear} CerviTrust. All rights reserved. For research and clinical decision support use only.
+            © {currentYear} CerviTrust. {t('footer.rights')}
           </p>
         </div>
       </div>

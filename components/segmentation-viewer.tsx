@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Info, ZoomIn } from 'lucide-react';
 import { MeterBar } from '@/components/charts';
 import { CellZoomModal } from '@/components/cell-zoom-modal';
+import { useTranslation } from '@/lib/i18n';
 import {
   Anomaly,
   RegionOfInterest,
@@ -69,7 +70,7 @@ function useTintedMask(base64: string | undefined, color: string): string | null
   return url;
 }
 
-function AnomalyRow({ anomaly }: { anomaly: Anomaly }) {
+function AnomalyRow({ anomaly, language }: { anomaly: Anomaly; language: 'en' | 'fr' }) {
   const tone = severityTone(anomaly.severity);
   return (
     <li className="flex items-center justify-between gap-3 text-sm">
@@ -82,7 +83,7 @@ function AnomalyRow({ anomaly }: { anomaly: Anomaly }) {
         <span className="text-foreground/80 truncate">{anomaly.label}</span>
       </span>
       <span className={`rounded-md border px-2 py-0.5 text-xs font-medium flex-shrink-0 ${TONE_BADGE[tone]}`}>
-        {severityLabel(anomaly.severity)}
+        {severityLabel(anomaly.severity, language)}
       </span>
     </li>
   );
@@ -103,6 +104,7 @@ export function SegmentationViewer({
   selectedId: number | null;
   onSelect: (id: number) => void;
 }) {
+  const { t, language } = useTranslation();
   const [showNucleus, setShowNucleus] = useState(true);
   const [showCytoplasm, setShowCytoplasm] = useState(true);
   const [showContours, setShowContours] = useState(true);
@@ -133,31 +135,31 @@ export function SegmentationViewer({
       <div className="xl:col-span-2 rounded-lg border border-border bg-white overflow-hidden">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-border p-4 bg-secondary/30">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">Masks</span>
+            <span className="text-xs font-semibold text-foreground/60 uppercase tracking-wide">{t('seg.masks')}</span>
             <label className="flex items-center gap-2 text-sm text-foreground/80">
               <input type="checkbox" checked={showNucleus} onChange={(e) => setShowNucleus(e.target.checked)} />
               <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: NUCLEUS_COLOR }} />
-              Nucleus
+              {t('seg.nucleus')}
             </label>
             <label className="flex items-center gap-2 text-sm text-foreground/80">
               <input type="checkbox" checked={showCytoplasm} onChange={(e) => setShowCytoplasm(e.target.checked)} />
               <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: CYTOPLASM_COLOR }} />
-              Cytoplasm
+              {t('seg.cytoplasm')}
             </label>
           </div>
 
           <label className="flex items-center gap-2 text-sm text-foreground/80">
             <input type="checkbox" checked={showContours} onChange={(e) => setShowContours(e.target.checked)} />
-            Contours
+            {t('seg.contours')}
           </label>
 
           <label className="flex items-center gap-2 text-sm text-foreground/80">
             <input type="checkbox" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} />
-            Instance labels
+            {t('seg.instanceLabels')}
           </label>
 
           <label className="flex items-center gap-3 text-sm text-foreground/80 ml-auto">
-            Opacity
+            {t('seg.opacity')}
             <input
               type="range"
               min={0}
@@ -174,9 +176,9 @@ export function SegmentationViewer({
             mask layers and the instance markers stay pixel-aligned with it. */}
         <div className="relative mx-auto w-fit bg-foreground/5">
           {showContours && segmentation?.overlay ? (
-            <img src={`data:image/png;base64,${segmentation.overlay}`} alt="Nucleus contours" className="block max-h-[520px] w-auto max-w-full" />
+            <img src={`data:image/png;base64,${segmentation.overlay}`} alt={t('report.nucleusContours')} className="block max-h-[520px] w-auto max-w-full" />
           ) : previewSrc ? (
-            <img src={previewSrc} alt="Uploaded cytology field" className="block max-h-[520px] w-auto max-w-full" />
+            <img src={previewSrc} alt={t('seg.altUploadedField')} className="block max-h-[520px] w-auto max-w-full" />
           ) : (
             <div className="h-64 w-64" />
           )}
@@ -201,7 +203,7 @@ export function SegmentationViewer({
                       ? 'border-primary bg-primary text-white scale-110'
                       : 'border-white bg-foreground/70 text-white hover:bg-primary'
                   }`}
-                  title={`Instance ${roi.id} — ${classMeta(roi.predicted_class).label}`}
+                  title={`${t('seg.instanceNum', { id: roi.id })} — ${classMeta(roi.predicted_class, language).label}`}
                 >
                   {roi.id}
                 </button>
@@ -213,7 +215,7 @@ export function SegmentationViewer({
         {regions.length > 0 ? (
           <div className="border-t border-border p-4">
             <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-3">
-              Detected instances ({regions.length})
+              {t('seg.detectedInstances')} ({regions.length})
             </p>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {regions.map((roi) => (
@@ -224,7 +226,7 @@ export function SegmentationViewer({
                     onSelect(roi.id);
                     setZoomRoi(roi);
                   }}
-                  title="Select and zoom in on this instance"
+                  title={t('seg.selectZoomInstance')}
                   className={`flex-shrink-0 rounded-lg border p-1.5 transition-all ${
                     roi.id === selected?.id ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'
                   }`}
@@ -241,28 +243,26 @@ export function SegmentationViewer({
       {/* Instance details */}
       <div className="rounded-lg border border-border bg-white p-6 space-y-6">
         <div className="flex items-center justify-between gap-3">
-          <h4 className="font-semibold text-foreground">Instance details</h4>
+          <h4 className="font-semibold text-foreground">{t('seg.instanceDetails')}</h4>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={() => step(-1)} disabled={regions.length < 2} className="rounded-md border border-border p-1.5 disabled:opacity-40" aria-label="Previous instance">
+            <button type="button" onClick={() => step(-1)} disabled={regions.length < 2} className="rounded-md border border-border p-1.5 disabled:opacity-40" aria-label={t('seg.previousInstance')}>
               <ChevronLeft size={16} />
             </button>
             <span className="text-sm text-foreground/70 tabular-nums px-1">
               {regions.length ? `${selectedIndex + 1} / ${regions.length}` : '0 / 0'}
             </span>
-            <button type="button" onClick={() => step(1)} disabled={regions.length < 2} className="rounded-md border border-border p-1.5 disabled:opacity-40" aria-label="Next instance">
+            <button type="button" onClick={() => step(1)} disabled={regions.length < 2} className="rounded-md border border-border p-1.5 disabled:opacity-40" aria-label={t('seg.nextInstance')}>
               <ChevronRight size={16} />
             </button>
           </div>
         </div>
 
         {!selected ? (
-          <p className="text-sm text-foreground/60">
-            No nucleus instance was isolated on this field. Whole-image classification results are still available above.
-          </p>
+          <p className="text-sm text-foreground/60">{t('seg.noInstance')}</p>
         ) : (
           <>
             <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setZoomRoi(selected)} title="Zoom in on this instance" className="flex-shrink-0">
+              <button type="button" onClick={() => setZoomRoi(selected)} title={t('seg.zoomInstance')} className="flex-shrink-0">
                 <span className="relative block">
                   <img src={`data:image/png;base64,${selected.image}`} alt={`Instance ${selected.id}`} className="h-16 w-16 rounded-lg border border-border object-cover" />
                   <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-white text-foreground/70">
@@ -271,46 +271,46 @@ export function SegmentationViewer({
                 </span>
               </button>
               <div>
-                <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(selected.predicted_class).tone]}`}>
-                  {classMeta(selected.predicted_class).label}
+                <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[classMeta(selected.predicted_class, language).tone]}`}>
+                  {classMeta(selected.predicted_class, language).label}
                 </span>
                 <p className="mt-1 text-sm text-foreground/70">
-                  Instance {selected.id} · {toPercent(selected.confidence, 1)} calibrated
+                  {t('seg.instanceNum', { id: selected.id })} · {toPercent(selected.confidence, 1)} calibrated
                 </p>
               </div>
             </div>
 
             {morphometrics ? (
               <div>
-                <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">Morphometric measurements</p>
+                <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">{t('seg.morphometricMeasurements')}</p>
                 <table className="w-full text-sm">
                   <tbody>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Nucleus area</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.nucleusArea')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{morphometrics.nucleus_area_px} px²</td>
                     </tr>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Cytoplasm area</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.cytoplasmArea')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{morphometrics.cytoplasm_area_px} px²</td>
                     </tr>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Nucleus / cytoplasm ratio</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.ncRatio')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{formatNumber(morphometrics.nc_ratio, 3)}</td>
                     </tr>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Nuclear circularity</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.nuclearCircularity')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{formatNumber(morphometrics.circularity, 2)}</td>
                     </tr>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Solidity</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.solidity')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{formatNumber(morphometrics.solidity, 2)}</td>
                     </tr>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Equivalent diameter</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.equivDiameter')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{morphometrics.equivalent_diameter_px} px</td>
                     </tr>
                     <tr className="border-t border-border">
-                      <td className="py-1.5 text-foreground/70">Chromatin dispersion</td>
+                      <td className="py-1.5 text-foreground/70">{t('seg.chromatinDispersion')}</td>
                       <td className="py-1.5 text-right font-medium text-foreground tabular-nums">{formatNumber(morphometrics.chromatin_std, 1)}</td>
                     </tr>
                   </tbody>
@@ -320,21 +320,21 @@ export function SegmentationViewer({
 
             {selected.anomalies?.length ? (
               <div>
-                <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">Localized observations</p>
+                <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">{t('seg.localizedObservations')}</p>
                 <ul className="space-y-2">
                   {selected.anomalies.map((anomaly) => (
-                    <AnomalyRow key={anomaly.label} anomaly={anomaly} />
+                    <AnomalyRow key={anomaly.label} anomaly={anomaly} language={language} />
                   ))}
                 </ul>
               </div>
             ) : null}
 
             <div>
-              <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">Model confidence</p>
-              <MeterBar label="Calibrated probability" value={selected.confidence} display={toPercent(selected.confidence, 1)} />
+              <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wide mb-2">{t('seg.modelConfidence')}</p>
+              <MeterBar label={t('seg.calibratedProbability')} value={selected.confidence} display={toPercent(selected.confidence, 1)} />
               {typeof selected.uncertainty === 'number' ? (
                 <p className="mt-2 text-xs text-foreground/60">
-                  Bayesian uncertainty ± {formatNumber(selected.uncertainty * 100, 1)} pts · entropy {formatNumber(selected.entropy, 2)}
+                  {t('seg.bayesianUncertainty', { value: formatNumber(selected.uncertainty * 100, 1), entropy: formatNumber(selected.entropy, 2) })}
                 </p>
               ) : null}
             </div>
@@ -344,19 +344,16 @@ export function SegmentationViewer({
         {stats ? (
           <div className="rounded-lg bg-secondary/40 p-4 space-y-2 text-sm">
             <p className="flex items-center gap-2 text-xs font-semibold text-foreground/60 uppercase tracking-wide">
-              <Info size={14} /> Field-level segmentation
+              <Info size={14} /> {t('seg.fieldLevelSegmentation')}
             </p>
-            <div className="flex justify-between"><span className="text-foreground/70">Mean nucleus area</span><span className="font-medium tabular-nums">{stats.mean_nucleus_area_px} px²</span></div>
-            <div className="flex justify-between"><span className="text-foreground/70">Mean circularity</span><span className="font-medium tabular-nums">{formatNumber(stats.mean_circularity, 2)}</span></div>
-            <div className="flex justify-between"><span className="text-foreground/70">Mean N/C ratio</span><span className="font-medium tabular-nums">{formatNumber(stats.mean_nc_ratio, 3)}</span></div>
-            <div className="flex justify-between"><span className="text-foreground/70">Method</span><span className="font-medium">{stats.source === 'hovernet' ? 'HoVer-Net' : 'Watershed'}</span></div>
+            <div className="flex justify-between"><span className="text-foreground/70">{t('seg.meanNucleusArea')}</span><span className="font-medium tabular-nums">{stats.mean_nucleus_area_px} px²</span></div>
+            <div className="flex justify-between"><span className="text-foreground/70">{t('seg.meanCircularity')}</span><span className="font-medium tabular-nums">{formatNumber(stats.mean_circularity, 2)}</span></div>
+            <div className="flex justify-between"><span className="text-foreground/70">{t('seg.meanNcRatio')}</span><span className="font-medium tabular-nums">{formatNumber(stats.mean_nc_ratio, 3)}</span></div>
+            <div className="flex justify-between"><span className="text-foreground/70">{t('seg.method')}</span><span className="font-medium">{stats.source === 'hovernet' ? 'HoVer-Net' : 'Watershed'}</span></div>
           </div>
         ) : null}
 
-        <p className="text-xs text-foreground/60 leading-relaxed">
-          Measurements are expressed in image pixels and provided for guidance only; they must be interpreted in the
-          clinical context. Cytoplasm boundaries are estimated from a dilation ring around each nucleus.
-        </p>
+        <p className="text-xs text-foreground/60 leading-relaxed">{t('seg.disclaimer')}</p>
       </div>
 
       {zoomRoi ? <CellZoomModal roi={zoomRoi} onClose={() => setZoomRoi(null)} /> : null}

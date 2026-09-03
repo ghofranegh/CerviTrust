@@ -4,7 +4,9 @@ import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Camera, Check, KeyRound, Loader2, LogOut, Pencil, X } from 'lucide-react';
 import { Avatar } from '@/components/avatar';
 import { getStoredDoctorToken } from '@/lib/client-auth';
-import { SPECIALTY_LABELS, personName, professionalTitleLabel, type DoctorProfile, type Specialty } from '@/lib/analysis-types';
+import { translateError, useTranslation, type TranslationKey } from '@/lib/i18n';
+import { personName, professionalTitleLabel, specialtyLabel, specialtyOptions, type DoctorProfile, type Specialty } from '@/lib/analysis-types';
+
 
 const FIELD =
   'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
@@ -15,20 +17,20 @@ const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
  * Squares and shrinks the picked image before upload — the profile store is a
  * JSON file, so a 4 MB camera photo would never fit as a data URL.
  */
-function resizeToDataUrl(file: File, size = 256): Promise<string> {
+function resizeToDataUrl(file: File, t: (key: TranslationKey) => string, size = 256): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('This image could not be read.'));
+    reader.onerror = () => reject(new Error(t('profile.imageUnreadable')));
     reader.onload = () => {
       const image = new Image();
-      image.onerror = () => reject(new Error('This file is not a valid image.'));
+      image.onerror = () => reject(new Error(t('profile.invalidImage')));
       image.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
         const context = canvas.getContext('2d');
         if (!context) {
-          reject(new Error('Your browser could not process this image.'));
+          reject(new Error(t('profile.canvasError')));
           return;
         }
         // Cover-crop: take the largest centred square, then scale it down.
@@ -61,12 +63,14 @@ function Toast({ tone, children }: { tone: 'success' | 'error'; children: React.
 }
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const { t } = useTranslation();
+  const closeLabel = t('common.close');
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-4">
       <div className="my-8 w-full max-w-lg rounded-xl border border-border bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-          <button type="button" onClick={onClose} className="rounded-md p-1 text-foreground/60 hover:bg-secondary hover:text-foreground" aria-label="Close">
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-foreground/60 hover:bg-secondary hover:text-foreground" aria-label={closeLabel}>
             <X size={18} />
           </button>
         </div>
@@ -85,6 +89,7 @@ export function DoctorProfilePanel({
   onLogout?: () => void;
   onUpdated?: (doctor: DoctorProfile) => void;
 }) {
+  const { t, language } = useTranslation();
   const [profile, setProfile] = useState(doctor);
   const [editing, setEditing] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -126,7 +131,7 @@ export function DoctorProfilePanel({
       body: JSON.stringify(body),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Update failed');
+    if (!res.ok) throw new Error(translateError(data.error, t) || t('profile.updateFailed'));
     setProfile(data.doctor);
     onUpdated?.(data.doctor);
     return data.doctor;
@@ -140,14 +145,14 @@ export function DoctorProfilePanel({
     setFeedback(null);
     setAvatarBusy(true);
     try {
-      if (!file.type.startsWith('image/')) throw new Error('Choose an image file (PNG, JPG…).');
-      if (file.size > MAX_UPLOAD_BYTES) throw new Error('That image is larger than 8 MB. Choose a smaller one.');
+      if (!file.type.startsWith('image/')) throw new Error(t('profile.imageOnly'));
+      if (file.size > MAX_UPLOAD_BYTES) throw new Error(t('profile.imageTooLarge'));
 
-      const avatar = await resizeToDataUrl(file);
+      const avatar = await resizeToDataUrl(file, t);
       await patchProfile({ avatar });
-      setFeedback({ tone: 'success', text: 'Profile picture updated.' });
+      setFeedback({ tone: 'success', text: t('profile.pictureUpdated') });
     } catch (error) {
-      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : 'Upload failed' });
+      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : t('profile.uploadFailed') });
     } finally {
       setAvatarBusy(false);
     }
@@ -158,9 +163,9 @@ export function DoctorProfilePanel({
     setFeedback(null);
     try {
       await patchProfile({ avatar: '' });
-      setFeedback({ tone: 'success', text: 'Profile picture removed.' });
+      setFeedback({ tone: 'success', text: t('profile.pictureRemoved') });
     } catch (error) {
-      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : 'Update failed' });
+      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : t('profile.updateFailed') });
     } finally {
       setAvatarBusy(false);
     }
@@ -173,9 +178,9 @@ export function DoctorProfilePanel({
     try {
       await patchProfile(form);
       setEditing(false);
-      setFeedback({ tone: 'success', text: 'Profile updated.' });
+      setFeedback({ tone: 'success', text: t('profile.profileUpdated') });
     } catch (error) {
-      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : 'Update failed' });
+      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : t('profile.updateFailed') });
     } finally {
       setLoading(false);
     }
@@ -187,32 +192,32 @@ export function DoctorProfilePanel({
     setFeedback(null);
     try {
       if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-        throw new Error('The two new passwords do not match.');
+        throw new Error(t('profile.passwordMismatch'));
       }
       await patchProfile({ currentPassword: passwordForm.currentPassword, password: passwordForm.newPassword });
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setChangingPassword(false);
-      setFeedback({ tone: 'success', text: 'Password changed.' });
+      setFeedback({ tone: 'success', text: t('profile.passwordChanged') });
     } catch (error) {
-      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : 'Update failed' });
+      setFeedback({ tone: 'error', text: error instanceof Error ? error.message : t('profile.updateFailed') });
     } finally {
       setLoading(false);
     }
   }
 
   const details = [
-    { label: 'Email', value: profile.email },
-    { label: 'Organization / Hospital / Laboratory', value: profile.hospital || 'Not provided' },
+    { label: t('profile.email'), value: profile.email },
+    { label: t('auth.organization'), value: profile.hospital || t('common.notProvided') },
     ...(profile.role === 'doctor'
       ? [
-          { label: 'Professional title', value: professionalTitleLabel(profile.professionalTitle) },
-          { label: 'Specialty', value: profile.specialty ? SPECIALTY_LABELS[profile.specialty] : 'Not provided' },
-          { label: 'Department / Service', value: profile.department || 'Not provided' },
+          { label: t('profile.professionalTitle'), value: professionalTitleLabel(profile.professionalTitle, language) },
+          { label: t('profile.specialty'), value: profile.specialty ? specialtyLabel(profile.specialty, language) : t('common.notProvided') },
+          { label: t('profile.department'), value: profile.department || t('common.notProvided') },
         ]
       : []),
-    { label: 'Phone', value: profile.phone || 'Not provided' },
-    { label: 'Member since', value: new Date(profile.createdAt).toLocaleDateString() },
-    { label: 'Last updated', value: new Date(profile.updatedAt).toLocaleDateString() },
+    { label: t('profile.phone'), value: profile.phone || t('common.notProvided') },
+    { label: t('profile.memberSince'), value: new Date(profile.createdAt).toLocaleDateString() },
+    { label: t('profile.lastUpdated'), value: new Date(profile.updatedAt).toLocaleDateString() },
   ];
 
   return (
@@ -233,8 +238,8 @@ export function DoctorProfilePanel({
                   onClick={() => fileInputRef.current?.click()}
                   disabled={avatarBusy}
                   className="absolute bottom-1 right-1 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-white text-foreground/80 shadow-sm transition-colors hover:bg-secondary disabled:opacity-60"
-                  aria-label="Change profile picture"
-                  title="Change profile picture"
+                  aria-label={t('profile.changePicture')}
+                  title={t('profile.changePicture')}
                 >
                   {avatarBusy ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
                 </button>
@@ -244,7 +249,7 @@ export function DoctorProfilePanel({
               <div className="pb-1">
                 <h2 className="text-2xl font-semibold text-foreground">{personName(profile)}</h2>
                 <p className="text-sm text-foreground/60">
-                  {profile.role === 'admin' ? 'Administrator' : professionalTitleLabel(profile.professionalTitle)}
+                  {profile.role === 'admin' ? t('profile.administrator') : professionalTitleLabel(profile.professionalTitle, language)}
                   {profile.hospital ? ` · ${profile.hospital}` : ''}
                 </p>
               </div>
@@ -256,24 +261,24 @@ export function DoctorProfilePanel({
                 onClick={() => setEditing(true)}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
               >
-                <Pencil size={15} /> Edit profile
+                <Pencil size={15} /> {t('profile.editProfile')}
               </button>
               <button
                 type="button"
                 onClick={onLogout}
                 className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary"
               >
-                <LogOut size={15} /> Sign out
+                <LogOut size={15} /> {t('nav.signOut')}
               </button>
             </div>
           </div>
 
           {profile.avatar ? (
             <button type="button" onClick={removeAvatar} disabled={avatarBusy} className="mt-3 text-xs text-foreground/60 hover:text-destructive disabled:opacity-60">
-              Remove profile picture
+              {t('profile.removePicture')}
             </button>
           ) : (
-            <p className="mt-3 text-xs text-foreground/60">Add a profile picture so colleagues recognise your reports.</p>
+            <p className="mt-3 text-xs text-foreground/60">{t('profile.addPicture')}</p>
           )}
 
           {feedback ? <div className="mt-4">
@@ -284,8 +289,8 @@ export function DoctorProfilePanel({
 
       {/* Details */}
       <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-foreground">Account details</h3>
-        <p className="text-sm text-foreground/60">These details appear on the reports you sign.</p>
+        <h3 className="text-lg font-semibold text-foreground">{t('profile.accountDetails')}</h3>
+        <p className="text-sm text-foreground/60">{t('profile.accountDetailsSubtitle')}</p>
 
         <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           {details.map((item) => (
@@ -301,30 +306,27 @@ export function DoctorProfilePanel({
       <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">Password and security</h3>
-            <p className="text-sm text-foreground/60">Your current password is required to set a new one.</p>
+            <h3 className="text-lg font-semibold text-foreground">{t('profile.passwordSecurity')}</h3>
+            <p className="text-sm text-foreground/60">{t('profile.passwordSecuritySubtitle')}</p>
           </div>
           <button
             type="button"
             onClick={() => setChangingPassword(true)}
             className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary"
           >
-            <KeyRound size={15} /> Change password
+            <KeyRound size={15} /> {t('profile.changePassword')}
           </button>
         </div>
-        <p className="mt-4 border-t border-border pt-4 text-xs text-foreground/50">
-          Accounts can only be removed by an administrator, from the administration console — you can edit your
-          details, change your password and update your picture here, but not delete your own account.
-        </p>
+        <p className="mt-4 border-t border-border pt-4 text-xs text-foreground/50">{t('profile.deleteNote')}</p>
       </div>
 
       {/* Edit modal */}
       {editing ? (
-        <Modal title="Edit profile" onClose={() => setEditing(false)}>
+        <Modal title={t('profile.editProfile')} onClose={() => setEditing(false)}>
           <form onSubmit={saveDetails} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-foreground">First name</span>
+                <span className="mb-1 block text-sm font-medium text-foreground">{t('auth.firstName')}</span>
                 <input
                   className={FIELD}
                   type="text"
@@ -335,7 +337,7 @@ export function DoctorProfilePanel({
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-foreground">Last name</span>
+                <span className="mb-1 block text-sm font-medium text-foreground">{t('auth.lastName')}</span>
                 <input
                   className={FIELD}
                   type="text"
@@ -347,8 +349,8 @@ export function DoctorProfilePanel({
               </label>
             </div>
             {[
-              { key: 'email' as const, label: 'Email', type: 'email', required: true },
-              { key: 'hospital' as const, label: 'Organization / Hospital / Laboratory', type: 'text', required: false },
+              { key: 'email' as const, label: t('auth.email'), type: 'email', required: true },
+              { key: 'hospital' as const, label: t('auth.organization'), type: 'text', required: false },
             ].map((field) => (
               <label key={field.key} className="block">
                 <span className="mb-1 block text-sm font-medium text-foreground">{field.label}</span>
@@ -364,7 +366,7 @@ export function DoctorProfilePanel({
             {profile.role === 'doctor' ? (
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-foreground">Specialty</span>
+                  <span className="mb-1 block text-sm font-medium text-foreground">{t('profile.specialty')}</span>
                   <select
                     className={FIELD}
                     required
@@ -372,23 +374,23 @@ export function DoctorProfilePanel({
                     onChange={(event) => setForm({ ...form, specialty: event.target.value as Specialty })}
                   >
                     <option value="" disabled>
-                      Choose a specialty
+                      {t('admin.chooseSpecialty')}
                     </option>
-                    {Object.entries(SPECIALTY_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
+                    {specialtyOptions(language).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-foreground">Department / Service</span>
+                  <span className="mb-1 block text-sm font-medium text-foreground">{t('profile.department')}</span>
                   <input className={FIELD} type="text" value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} />
                 </label>
               </div>
             ) : null}
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">Phone</span>
+              <span className="mb-1 block text-sm font-medium text-foreground">{t('profile.phone')}</span>
               <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
                 <span className="flex items-center bg-secondary px-3 text-sm text-foreground/50">+216</span>
                 <input
@@ -404,10 +406,10 @@ export function DoctorProfilePanel({
 
             <div className="flex justify-end gap-2 border-t border-border pt-4">
               <button type="button" onClick={() => setEditing(false)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-                Cancel
+                {t('common.cancel')}
               </button>
               <button type="submit" disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-60">
-                {loading ? <Loader2 size={15} className="animate-spin" /> : null} Save changes
+                {loading ? <Loader2 size={15} className="animate-spin" /> : null} {t('profile.saveChanges')}
               </button>
             </div>
           </form>
@@ -416,28 +418,28 @@ export function DoctorProfilePanel({
 
       {/* Password modal */}
       {changingPassword ? (
-        <Modal title="Change password" onClose={() => setChangingPassword(false)}>
+        <Modal title={t('profile.changePassword')} onClose={() => setChangingPassword(false)}>
           <form onSubmit={savePassword} className="space-y-4">
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">Current password</span>
+              <span className="mb-1 block text-sm font-medium text-foreground">{t('profile.currentPassword')}</span>
               <input className={FIELD} type="password" autoComplete="current-password" required value={passwordForm.currentPassword} onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">New password</span>
+              <span className="mb-1 block text-sm font-medium text-foreground">{t('reset.newPassword')}</span>
               <input className={FIELD} type="password" autoComplete="new-password" required minLength={8} value={passwordForm.newPassword} onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })} />
-              <span className="mt-1 block text-xs text-foreground/60">At least 8 characters.</span>
+              <span className="mt-1 block text-xs text-foreground/60">{t('profile.atLeast8')}</span>
             </label>
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-foreground">Confirm new password</span>
+              <span className="mb-1 block text-sm font-medium text-foreground">{t('reset.confirmNewPassword')}</span>
               <input className={FIELD} type="password" autoComplete="new-password" required value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })} />
             </label>
 
             <div className="flex justify-end gap-2 border-t border-border pt-4">
               <button type="button" onClick={() => setChangingPassword(false)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/80 hover:bg-secondary">
-                Cancel
+                {t('common.cancel')}
               </button>
               <button type="submit" disabled={loading} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-60">
-                {loading ? <Loader2 size={15} className="animate-spin" /> : null} Update password
+                {loading ? <Loader2 size={15} className="animate-spin" /> : null} {t('profile.updatePassword')}
               </button>
             </div>
           </form>

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
 import { classMeta, TONE_BADGE, toPercent, type RegionOfInterest } from '@/lib/analysis-types';
 
 /**
@@ -10,6 +11,7 @@ import { classMeta, TONE_BADGE, toPercent, type RegionOfInterest } from '@/lib/a
  * a click outside the image.
  */
 export function CellZoomModal({ roi, onClose }: { roi: RegionOfInterest; onClose: () => void }) {
+  const { t, language } = useTranslation();
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -18,7 +20,7 @@ export function CellZoomModal({ roi, onClose }: { roi: RegionOfInterest; onClose
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  const meta = classMeta(roi.predicted_class);
+  const meta = classMeta(roi.predicted_class, language);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
@@ -27,7 +29,7 @@ export function CellZoomModal({ roi, onClose }: { roi: RegionOfInterest; onClose
           type="button"
           onClick={onClose}
           className="absolute -top-3 -right-3 flex h-9 w-9 items-center justify-center rounded-full bg-white text-foreground shadow-lg hover:bg-secondary"
-          aria-label="Close"
+          aria-label={t('common.close')}
         >
           <X size={18} />
         </button>
@@ -41,9 +43,9 @@ export function CellZoomModal({ roi, onClose }: { roi: RegionOfInterest; onClose
           />
         </div>
         <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/95 px-3 py-1.5 shadow">
-          <span className="text-sm font-medium text-foreground">Cell #{roi.id}</span>
+          <span className="text-sm font-medium text-foreground">{t('zoom.cell', { id: roi.id })}</span>
           <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-semibold ${TONE_BADGE[meta.tone]}`}>{meta.label}</span>
-          <span className="text-xs text-foreground/60">{toPercent(roi.confidence, 1)} calibrated</span>
+          <span className="text-xs text-foreground/60">{t('zoom.calibrated', { value: toPercent(roi.confidence, 1) })}</span>
         </div>
       </div>
     </div>
