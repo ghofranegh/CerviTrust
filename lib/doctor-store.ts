@@ -516,6 +516,12 @@ export async function adminUpdateAccount(
     throw new Error('Account not found.');
   }
 
+  // Self-deactivation would kill the admin's own session mid-action for no
+  // benefit — another admin has to be the one to deactivate an admin account.
+  if (updates.status === 'inactive' && target.id === caller.id) {
+    throw new Error('Administrators cannot deactivate their own account.');
+  }
+
   // Deactivating (or demoting) the only active admin would lock everyone out
   // of the administration console.
   const losesAdminAccess =
@@ -572,6 +578,14 @@ export async function adminDeleteAccount(callerId: string, targetId: string) {
   }
   if (target.role === 'admin' && target.id !== caller.id) {
     throw new Error('An administrator can only delete their own account, not another administrator.');
+  }
+  if (target.role === 'admin' && target.id === caller.id) {
+    const otherActiveAdmins = store.doctors.filter(
+      (entry) => entry.id !== target.id && entry.role === 'admin' && entry.status === 'active',
+    );
+    if (otherActiveAdmins.length === 0) {
+      throw new Error('You are the only administrator — create another admin account before deleting your own.');
+    }
   }
 
   await deleteDoctor(targetId);

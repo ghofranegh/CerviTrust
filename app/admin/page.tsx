@@ -479,7 +479,12 @@ function AdminContent({ selfId }: { selfId: string }) {
                     <tbody>
                       {stats.doctors.map((entry) => {
                         const isSelf = entry.id === selfId;
-                        const canDelete = entry.role === 'doctor' || isSelf;
+                        const otherActiveAdmins = stats.doctors.filter(
+                          (d) => d.id !== entry.id && d.role === 'admin' && d.status === 'active',
+                        ).length;
+                        const isSoleActiveAdmin = entry.role === 'admin' && entry.status === 'active' && otherActiveAdmins === 0;
+                        const canDeactivate = !(isSelf && entry.role === 'admin');
+                        const canDelete = entry.role === 'doctor' || (isSelf && !isSoleActiveAdmin);
                         return (
                           <tr key={entry.id} className="border-b border-border last:border-0">
                             <td className="py-2 pr-4">
@@ -510,7 +515,8 @@ function AdminContent({ selfId }: { selfId: string }) {
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  disabled={busyAccountId === entry.id}
+                                  disabled={busyAccountId === entry.id || !canDeactivate}
+                                  title={!canDeactivate ? t('admin.cannotDeactivateSelfTitle') : undefined}
                                   onClick={() => handleSetStatus(entry.id, entry.status === 'inactive' ? 'active' : 'inactive')}
                                   className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground/80 hover:bg-secondary disabled:opacity-50"
                                 >
@@ -519,7 +525,7 @@ function AdminContent({ selfId }: { selfId: string }) {
                                 <button
                                   type="button"
                                   disabled={busyAccountId === entry.id || !canDelete}
-                                  title={!canDelete ? t('admin.cannotDeleteAdminTitle') : undefined}
+                                  title={!canDelete ? (entry.role === 'admin' && isSelf ? t('admin.cannotDeleteSoleAdminTitle') : t('admin.cannotDeleteAdminTitle')) : undefined}
                                   onClick={() => handleDeleteAccount(entry.id)}
                                   className="rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-40"
                                 >
